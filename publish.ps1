@@ -39,10 +39,14 @@ $ErrorActionPreference = "Stop"
 $repoRoot = $PSScriptRoot
 $projectPath = Join-Path $repoRoot "src/ClassLapse/ClassLapse.csproj"
 
-# Probe version from csproj
-[xml]$csproj = Get-Content $projectPath
-$version = $csproj.SelectSingleNode("//Version").InnerText
-if (-not $version) { $version = "0.1.0" }
+# Probe version from csproj. Use regex instead of [xml] parsing: PowerShell 5.x
+# Get-Content defaults to the system code page (GBK on Chinese Windows), which
+# mangles UTF-8 csproj content with Chinese text and breaks XML parsing.
+$csprojText = Get-Content $projectPath -Raw -Encoding UTF8
+$version = "0.1.0"
+if ($csprojText -match '<Version>([^<]+)</Version>') {
+    $version = $matches[1]
+}
 
 Write-Host "ClassLapse v$version" -ForegroundColor Cyan
 
