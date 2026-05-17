@@ -1,10 +1,14 @@
+using System.Runtime.Versioning;
 using System.Windows;
 using ClassLapse.Core;
 
 namespace ClassLapse;
 
+[SupportedOSPlatform("windows")]
 public partial class App : Application
 {
+    private TrayApp? _trayApp;
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -16,7 +20,16 @@ public partial class App : Application
             return;
         }
 
-        // M3 will wire TrayApp here. For now the app starts and stays alive
-        // (ShutdownMode=OnExplicitShutdown in App.xaml) without showing any window.
+        var configStore = new ConfigStore();
+        var cameraService = new CameraService();
+        var scheduler = new CaptureScheduler(configStore);
+        _trayApp = new TrayApp(configStore, cameraService, scheduler);
+        _trayApp.Start();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _trayApp?.Dispose();
+        base.OnExit(e);
     }
 }
