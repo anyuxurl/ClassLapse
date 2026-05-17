@@ -92,8 +92,15 @@ if (Test-Path $deployment) { Copy-Item $deployment (Join-Path $OutputDir "deploy
 
 if ($Zip) {
     $zipName = "ClassLapse-v$version-win-x64.zip"
-    $zipPath = Join-Path (Split-Path $OutputDir -Parent -ErrorAction SilentlyContinue) $zipName
-    if (-not $zipPath -or $zipPath -eq $zipName) { $zipPath = $zipName }
+    # Put the zip next to OutputDir, or in the current directory when
+    # OutputDir is a bare relative name (Split-Path returns "" in PS 5.x
+    # and Join-Path "" $zipName then throws "path cannot be empty").
+    $outputParent = Split-Path -Path $OutputDir -Parent
+    if ([string]::IsNullOrEmpty($outputParent)) {
+        $zipPath = $zipName
+    } else {
+        $zipPath = Join-Path $outputParent $zipName
+    }
     if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
     Compress-Archive -Path (Join-Path $OutputDir "*") -DestinationPath $zipPath
     $zipSize = (Get-Item $zipPath).Length / 1MB
