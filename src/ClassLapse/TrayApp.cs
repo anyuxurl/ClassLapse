@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using ClassLapse.Core;
 using ClassLapse.Models;
+using ClassLapse.Views;
 using H.NotifyIcon;
 
 namespace ClassLapse;
@@ -30,6 +31,7 @@ public sealed class TrayApp : IDisposable
     private MenuItem? _statusItem;
     private MenuItem? _todayItem;
     private MenuItem? _cameraItem;
+    private SettingsWindow? _settingsWindow;
 
     public TrayApp(ConfigStore configStore, CameraService cameraService, CaptureScheduler scheduler)
     {
@@ -117,7 +119,11 @@ public sealed class TrayApp : IDisposable
         openFolder.Click += (_, _) => OpenOutputFolder();
         menu.Items.Add(openFolder);
 
-        var openConfig = new MenuItem { Header = "⚙️  打开配置文件" };
+        var settings = new MenuItem { Header = "⚙️  设置..." };
+        settings.Click += (_, _) => OpenSettings();
+        menu.Items.Add(settings);
+
+        var openConfig = new MenuItem { Header = "📝  打开配置文件 (高级)" };
         openConfig.Click += (_, _) => OpenConfigFile();
         menu.Items.Add(openConfig);
 
@@ -291,5 +297,17 @@ public sealed class TrayApp : IDisposable
             FileName = path,
             UseShellExecute = true,
         });
+    }
+
+    private void OpenSettings()
+    {
+        if (_settingsWindow != null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+        _settingsWindow = new SettingsWindow(_configStore, _cameraService);
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Show();
     }
 }

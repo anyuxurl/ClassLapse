@@ -1,0 +1,196 @@
+<Window x:Class="ClassLapse.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ClassLapse 设置"
+        Width="660" Height="560"
+        MinWidth="520" MinHeight="420"
+        WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="True">
+
+    <Window.Resources>
+        <Style TargetType="Label">
+            <Setter Property="Margin" Value="0,8,0,2"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="HintText" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#777"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,2,0,0"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel LastChildFill="True">
+
+        <Border DockPanel.Dock="Bottom" BorderBrush="#DDD" BorderThickness="0,1,0,0" Padding="12,8">
+            <Grid>
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#666"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="确定" Width="88" Height="28" Margin="6,0"
+                            Click="OnSaveClick" IsDefault="True"/>
+                    <Button Content="取消" Width="88" Height="28" Margin="6,0,0,0"
+                            Click="OnCancelClick" IsCancel="True"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <TabControl Margin="12">
+
+            <!-- ============ Tab 1: 拍照计划 ============ -->
+            <TabItem Header="拍照计划">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <Label Content="生效星期"/>
+                        <UniformGrid Rows="1" Columns="7">
+                            <CheckBox x:Name="DayMon" Content="周一"/>
+                            <CheckBox x:Name="DayTue" Content="周二"/>
+                            <CheckBox x:Name="DayWed" Content="周三"/>
+                            <CheckBox x:Name="DayThu" Content="周四"/>
+                            <CheckBox x:Name="DayFri" Content="周五"/>
+                            <CheckBox x:Name="DaySat" Content="周六"/>
+                            <CheckBox x:Name="DaySun" Content="周日"/>
+                        </UniformGrid>
+
+                        <Label Content="拍照时间窗口"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="StartTimeBox" Width="80" TextChanged="OnScheduleChanged"/>
+                            <TextBlock Text="  到  " VerticalAlignment="Center"/>
+                            <TextBox x:Name="EndTimeBox" Width="80" TextChanged="OnScheduleChanged"/>
+                            <TextBlock Text="   (格式 HH:mm，结束时间不含)" VerticalAlignment="Center" Foreground="#888"/>
+                        </StackPanel>
+
+                        <Label Content="拍照间隔（秒）"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="IntervalBox" Width="80" TextChanged="OnScheduleChanged"/>
+                            <TextBlock Text="   秒/张" VerticalAlignment="Center" Foreground="#888"/>
+                        </StackPanel>
+
+                        <Border Margin="0,18,0,0" Padding="12" Background="#F5F8FA" CornerRadius="4">
+                            <StackPanel>
+                                <TextBlock Text="预计拍摄量" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="EstimateText" Margin="0,4,0,0" Foreground="#444"/>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============ Tab 2: 摄像头 ============ -->
+            <TabItem Header="摄像头">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <Label Content="选择摄像头"/>
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox x:Name="CameraCombo" Width="380" DisplayMemberPath="FriendlyName"/>
+                            <Button Content="刷新" Width="64" Margin="8,0,0,0" Click="OnRefreshCamerasClick"/>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="提示：避开老师上课会用的展台、希沃自带相机等设备"/>
+
+                        <Label Content="目标分辨率"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="WidthBox" Width="80"/>
+                            <TextBlock Text="  ×  " VerticalAlignment="Center"/>
+                            <TextBox x:Name="HeightBox" Width="80"/>
+                            <TextBlock Text="   (实际会选最接近的支持值)" VerticalAlignment="Center" Foreground="#888"/>
+                        </StackPanel>
+
+                        <Label Content="JPEG 质量 (1-100，越大越清晰但体积越大)"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Slider x:Name="QualitySlider" Width="320" Minimum="1" Maximum="100"
+                                    TickFrequency="5" IsSnapToTickEnabled="True"
+                                    ValueChanged="OnQualityChanged"/>
+                            <TextBox x:Name="QualityBox" Width="60" Margin="12,0,0,0"
+                                     TextChanged="OnQualityBoxChanged"/>
+                        </StackPanel>
+
+                        <Button Content="📷  用当前摄像头拍一张测试" Width="280" Height="32"
+                                Margin="0,16,0,0" HorizontalAlignment="Left"
+                                Click="OnTestCaptureClick"/>
+                        <TextBlock x:Name="CameraTestResult" Margin="0,8,0,0" Foreground="#444"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============ Tab 3: 存储 ============ -->
+            <TabItem Header="存储">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <Label Content="输出文件夹"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="OutputFolderBox" Width="460"/>
+                            <Button Content="浏览..." Width="80" Margin="8,0,0,0"
+                                    Click="OnBrowseFolderClick"/>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="照片按日期归档：{输出文件夹}/2026-05-17/14-30-00.jpg"/>
+
+                        <CheckBox x:Name="AutoCleanupCheck" Content="启用自动清理（默认关闭）"
+                                  Margin="0,18,0,0" Click="OnAutoCleanupToggle"/>
+
+                        <Grid Margin="24,4,0,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Label Grid.Row="0" Grid.Column="0" Content="保留最近"/>
+                            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
+                                <TextBox x:Name="CleanupDaysBox" Width="60"/>
+                                <TextBlock Text="   天，更早的自动删除" VerticalAlignment="Center" Foreground="#888"/>
+                            </StackPanel>
+
+                            <Label Grid.Row="1" Grid.Column="0" Content="磁盘上限"/>
+                            <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
+                                <TextBox x:Name="MaxDiskBox" Width="60"/>
+                                <TextBlock Text="   GB（0 = 不限）" VerticalAlignment="Center" Foreground="#888"/>
+                            </StackPanel>
+                        </Grid>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ============ Tab 4: 关于 ============ -->
+            <TabItem Header="关于">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12">
+
+                        <TextBlock Text="ClassLapse · 课堂延时" FontSize="20" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="VersionText" Margin="0,2,0,12" Foreground="#666"/>
+                        <TextBlock Text="希沃白板自动拍照工具，按计划用指定摄像头拍照存盘，方便后期合成延时视频。"
+                                   TextWrapping="Wrap" Foreground="#444"/>
+
+                        <Separator Margin="0,16"/>
+
+                        <CheckBox x:Name="AutoStartCheck" Content="开机自动启动 (HKCU\Run)"
+                                  IsEnabled="False"/>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="开机自启将在 M6 接入；目前可在设置里勾选，但 commit 时不写注册表。"/>
+
+                        <Separator Margin="0,16"/>
+
+                        <Label Content="配置文件"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="ConfigPathBox" Width="440" IsReadOnly="True"/>
+                            <Button Content="打开" Width="80" Margin="8,0,0,0" Click="OnOpenConfigClick"/>
+                        </StackPanel>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+    </DockPanel>
+</Window>
