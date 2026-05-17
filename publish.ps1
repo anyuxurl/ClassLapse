@@ -3,31 +3,50 @@
     Publish ClassLapse as a single-file Windows .exe.
 
 .DESCRIPTION
-    Default mode: framework-dependent single .exe (~5MB), requires .NET 8 Runtime on target machine.
-    -SelfContained switch: bundle the .NET runtime (~65MB), no install needed on target.
+    Default mode: self-contained single .exe (~65MB), no runtime needed on
+    target. Use -FrameworkDependent for a ~5MB .exe that requires the user
+    to have the .NET 8 Runtime installed already.
 
-.PARAMETER SelfContained
-    Bundle the .NET runtime into the .exe.
+    Self-contained is the default because the typical deployment target
+    (a Seewo IFP running Windows 10/11 LTSC) won't have .NET 8 Runtime
+    out of the box.
+
+.PARAMETER FrameworkDependent
+    Don't bundle the runtime. Result is ~5MB but requires .NET 8 Runtime
+    on the target machine.
 
 .PARAMETER OutputDir
     Output directory. Default: publish/
 
+.PARAMETER Zip
+    After building, package OutputDir into ClassLapse-v{version}-win-x64.zip
+    next to it. Adds README + deployment.md from docs/ if present.
+
 .EXAMPLE
-    ./publish.ps1
-    ./publish.ps1 -SelfContained
-    ./publish.ps1 -OutputDir D:\Releases\ClassLapse
+    ./publish.ps1                  # self-contained, into ./publish/
+    ./publish.ps1 -FrameworkDependent
+    ./publish.ps1 -Zip             # also produce a .zip ready to drop on a USB stick
 #>
 
 [CmdletBinding()]
 param(
-    [switch]$SelfContained,
+    [switch]$FrameworkDependent,
+    [switch]$Zip,
     [string]$OutputDir = "publish"
 )
 
 $ErrorActionPreference = "Stop"
-$projectPath = "src/ClassLapse/ClassLapse.csproj"
+$repoRoot = $PSScriptRoot
+$projectPath = Join-Path $repoRoot "src/ClassLapse/ClassLapse.csproj"
 
-$args = @(
+# Probe version from csproj
+[xml]$csproj = Get-Content $projectPath
+$version = $csproj.SelectSingleNode("//Version").InnerText
+if (-not $version) { $version = "0.1.0" }
+
+Write-Host "ClassLapse v$version" -ForegroundColor Cyan
+
+$dotnetArgs = @(
     "publish", $projectPath,
     "-c", "Release",
     "-r", "win-x64",
@@ -38,22 +57,41 @@ $args = @(
     "-p:EnableCompressionInSingleFile=true"
 )
 
-if ($SelfContained) {
-    $args += @("--self-contained", "true")
-    Write-Host "Building self-contained .exe (bundled runtime, ~65MB)..." -ForegroundColor Cyan
+if ($FrameworkDependent) {
+    $dotnetArgs += @("--self-contained", "false")
+    Write-Host "Mode: framework-dependent (~5MB, requires .NET 8 Runtime on target)" -ForegroundColor DarkGray
 } else {
-    $args += @("--self-contained", "false")
-    Write-Host "Building framework-dependent .exe (requires .NET 8 Runtime, ~5MB)..." -ForegroundColor Cyan
+    $dotnetArgs += @("--self-contained", "true")
+    Write-Host "Mode: self-contained (~65MB, no runtime needed on target)" -ForegroundColor DarkGray
 }
 
-& dotnet @args
+& dotnet @dotnetArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Publish failed."
     exit 1
 }
 
 $exe = Join-Path $OutputDir "ClassLapse.exe"
-if (Test-Path $exe) {
-    $size = (Get-Item $exe).Length / 1MB
-    Write-Host ("Done. {0} ({1:N1} MB)" -f $exe, $size) -ForegroundColor Green
+if (-not (Test-Path $exe)) {
+    Write-Error "Publish completed but $exe was not produced."
+    exit 1
+}
+
+$size = (Get-Item $exe).Length / 1MB
+Write-Host ("Built {0} ({1:N1} MB)" -f $exe, $size) -ForegroundColor Green
+
+# Drop user docs next to the .exe so a USB-stick deploy is self-explanatory
+$readme = Join-Path $repoRoot "docs/README.md"
+$deployment = Join-Path $repoRoot "docs/deployment.md"
+if (Test-Path $readme) { Copy-Item $readme (Join-Path $OutputDir "README.md") -Force }
+if (Test-Path $deployment) { Copy-Item $deployment (Join-Path $OutputDir "deployment.md") -Force }
+
+if ($Zip) {
+    $zipName = "ClassLapse-v$version-win-x64.zip"
+    $zipPath = Join-Path (Split-Path $OutputDir -Parent -ErrorAction SilentlyContinue) $zipName
+    if (-not $zipPath -or $zipPath -eq $zipName) { $zipPath = $zipName }
+    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+    Compress-Archive -Path (Join-Path $OutputDir "*") -DestinationPath $zipPath
+    $zipSize = (Get-Item $zipPath).Length / 1MB
+    Write-Host ("Packaged {0} ({1:N1} MB)" -f $zipPath, $zipSize) -ForegroundColor Green
 }
