@@ -71,6 +71,7 @@ public sealed class ConfigStore
             string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
             string backup = $"{_path}.bak.{stamp}";
             File.Move(_path, backup, overwrite: true);
+            Log.Warn($"config corrupted, backed up to {backup} and reset to defaults");
         }
         catch
         {

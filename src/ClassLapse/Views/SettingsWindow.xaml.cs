@@ -49,6 +49,8 @@ public partial class SettingsWindow : Window
         PopulateCameras(selectMoniker: _config.Camera.DeviceMoniker);
         VersionText.Text = "版本 " + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0");
         ConfigPathBox.Text = _configStore.FilePath;
+        LogDirBox.Text = Log.Instance.LogDir;
+        AutoStartCheck.IsChecked = AutoStartManager.IsEnabled();
         ApplyHighestResolutionLock();
         _loaded = true;
         UpdateEstimate();
@@ -464,6 +466,20 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void OnOpenLogsClick(object sender, RoutedEventArgs e)
+    {
+        var dir = Log.Instance.LogDir;
+        try
+        {
+            Directory.CreateDirectory(dir);
+            Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            SetStatus("无法打开日志目录: " + ex.Message);
+        }
+    }
+
     // ----- save / cancel -----
 
     private void OnSaveClick(object sender, RoutedEventArgs e)
@@ -484,8 +500,33 @@ public partial class SettingsWindow : Window
             return;
         }
 
+        ApplyAutoStart(built.AutoStartWithWindows);
+
         DialogResult = true;
         Close();
+    }
+
+    private static void ApplyAutoStart(bool wanted)
+    {
+        try
+        {
+            bool current = AutoStartManager.IsEnabled();
+            if (wanted && !current)
+            {
+                var exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetExecutingAssembly().Location;
+                AutoStartManager.Enable(exePath);
+                Log.Info($"auto-start enabled -> {exePath}");
+            }
+            else if (!wanted && current)
+            {
+                AutoStartManager.Disable();
+                Log.Info("auto-start disabled");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("failed to update auto-start registry", ex);
+        }
     }
 
     private void OnCancelClick(object sender, RoutedEventArgs e)

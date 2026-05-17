@@ -22,6 +22,7 @@ public sealed class TrayApp : IDisposable
     private readonly ConfigStore _configStore;
     private readonly CameraService _cameraService;
     private readonly CaptureScheduler _scheduler;
+    private readonly StorageJanitor _janitor;
 
     private DateTime _todayStartedAt = DateTime.Today;
     private int _todayCount;
@@ -38,6 +39,7 @@ public sealed class TrayApp : IDisposable
         _configStore = configStore;
         _cameraService = cameraService;
         _scheduler = scheduler;
+        _janitor = new StorageJanitor();
 
         _tray = new TaskbarIcon
         {
@@ -228,6 +230,7 @@ public sealed class TrayApp : IDisposable
         if (!result.Success)
         {
             _stickyBusyUntil = DateTime.Now.Add(StickyBusyDuration);
+            Log.Warn($"capture failed: {result.Failure} after {result.ElapsedMilliseconds}ms — {result.ErrorMessage}");
             return;
         }
 
@@ -239,10 +242,14 @@ public sealed class TrayApp : IDisposable
             var path = Path.Combine(dayDir, now.ToString("HH-mm-ss") + ".jpg");
             await File.WriteAllBytesAsync(path, result.JpegBytes!);
             _todayCount++;
+            Log.Info($"captured {result.Width}x{result.Height} {result.JpegBytes!.Length / 1024.0:N1}KB in {result.ElapsedMilliseconds}ms -> {Path.GetFileName(path)}");
+
+            _janitor.RunIfDue(config.Storage);
         }
-        catch
+        catch (Exception ex)
         {
             _stickyBusyUntil = DateTime.Now.Add(StickyBusyDuration);
+            Log.Error("failed to write capture to disk", ex);
         }
     }
 

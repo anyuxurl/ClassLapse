@@ -21,16 +21,20 @@ public partial class App : Application
             return;
         }
 
+        Log.Info($"ClassLapse starting (PID {Environment.ProcessId})");
+
         var configStore = new ConfigStore();
         var cameraService = new CameraService();
         var config = configStore.Load();
 
         if (NeedsFirstRunSetup(config))
         {
+            Log.Info("first-run setup required (missing camera or output folder)");
             var wizard = new SettingsWindow(configStore, cameraService, isFirstRun: true);
             var completed = wizard.ShowDialog();
             if (completed != true)
             {
+                Log.Info("first-run cancelled by user, exiting");
                 Shutdown(0);
                 return;
             }
@@ -39,6 +43,7 @@ public partial class App : Application
         var scheduler = new CaptureScheduler(configStore);
         _trayApp = new TrayApp(configStore, cameraService, scheduler);
         _trayApp.Start();
+        Log.Info("scheduler started, tray ready");
     }
 
     private static bool NeedsFirstRunSetup(Models.AppConfig config)
@@ -49,6 +54,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        Log.Info("ClassLapse exiting");
         _trayApp?.Dispose();
         base.OnExit(e);
     }

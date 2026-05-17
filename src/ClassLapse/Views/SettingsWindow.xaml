@@ -191,10 +191,9 @@
 
                         <Separator Margin="0,16"/>
 
-                        <CheckBox x:Name="AutoStartCheck" Content="开机自动启动 (HKCU\Run)"
-                                  IsEnabled="False"/>
+                        <CheckBox x:Name="AutoStartCheck" Content="开机自动启动 (HKCU\Run)"/>
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="开机自启将在 M6 接入；目前可在设置里勾选，但 commit 时不写注册表。"/>
+                                   Text="勾选后将在 HKCU\Software\Microsoft\Windows\CurrentVersion\Run 写入当前 exe 路径。无需管理员权限。"/>
 
                         <Separator Margin="0,16"/>
 
@@ -202,6 +201,12 @@
                         <StackPanel Orientation="Horizontal">
                             <TextBox x:Name="ConfigPathBox" Width="440" IsReadOnly="True"/>
                             <Button Content="打开" Width="80" Margin="8,0,0,0" Click="OnOpenConfigClick"/>
+                        </StackPanel>
+
+                        <Label Content="日志目录"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBox x:Name="LogDirBox" Width="440" IsReadOnly="True"/>
+                            <Button Content="打开" Width="80" Margin="8,0,0,0" Click="OnOpenLogsClick"/>
                         </StackPanel>
 
                     </StackPanel>
