@@ -502,8 +502,28 @@ public partial class SettingsWindow : Window
 
         ApplyAutoStart(built.AutoStartWithWindows);
 
-        DialogResult = true;
+        TrySetDialogResult(true);
         Close();
+    }
+
+    private void OnCancelClick(object sender, RoutedEventArgs e)
+    {
+        TrySetDialogResult(false);
+        Close();
+    }
+
+    /// <summary>
+    /// Setting <see cref="Window.DialogResult"/> throws
+    /// <see cref="InvalidOperationException"/> on a non-modal window
+    /// (i.e. one opened via <c>Show()</c> rather than <c>ShowDialog()</c>).
+    /// Swallow that case so closing the regular settings window from the
+    /// tray menu does not propagate an unhandled UI-thread exception that
+    /// would tear the whole application down.
+    /// </summary>
+    private void TrySetDialogResult(bool value)
+    {
+        try { DialogResult = value; }
+        catch (InvalidOperationException) { /* opened via Show(), not ShowDialog() */ }
     }
 
     private static void ApplyAutoStart(bool wanted)
@@ -527,12 +547,6 @@ public partial class SettingsWindow : Window
         {
             Log.Error("failed to update auto-start registry", ex);
         }
-    }
-
-    private void OnCancelClick(object sender, RoutedEventArgs e)
-    {
-        DialogResult = false;
-        Close();
     }
 
     private bool TryBuildConfig(out AppConfig built, out string? error)
