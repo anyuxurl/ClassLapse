@@ -1,0 +1,54 @@
+## .NET build artifacts
+**/bin/
+**/obj/
+*.user
+*.suo
+*.userprefs
+.vs/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+nuget.exe
+packages/
+!**/packages/build/
+
+## Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+TestResult.xml
+coverage*
+*.coverage
+*.coveragexml
+
+## Publish output
+publish/
+[Pp]ublish/
+*.publishsettings
+PublishScripts/
+
+## IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+## Claude Code session state (local only)
+.claude/
+
+## OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+## ClassLapse — runtime data must never be committed
+**/config.json
+**/config.bak.*
+logs/
+*.log
+captures/
