@@ -26,7 +26,7 @@ public sealed class ConfigStore
         };
     }
 
-    public string Path => _path;
+    public string FilePath => _path;
 
     public AppConfig Load()
     {
@@ -49,7 +49,7 @@ public sealed class ConfigStore
 
     public void Save(AppConfig config)
     {
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(_path)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         string json = JsonSerializer.Serialize(config, _options);
 
         string tmp = _path + ".tmp";
