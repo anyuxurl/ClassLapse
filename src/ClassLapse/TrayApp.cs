@@ -190,12 +190,28 @@ public sealed class TrayApp : IDisposable
     {
         ScheduleDecision.Reason.ShouldCapture => "运行中",
         ScheduleDecision.Reason.OutsideActiveDay => "今天不在计划内",
-        ScheduleDecision.Reason.BeforeWindow => $"等到 {config.Schedule.StartTime:HH:mm} 开拍",
-        ScheduleDecision.Reason.AfterWindow => "今天已收工",
+        ScheduleDecision.Reason.OutsideTimeWindows => DescribeNextWindow(config),
         ScheduleDecision.Reason.TooSoon => "运行中",
         ScheduleDecision.Reason.Paused => $"已暂停至 {config.PausedUntil:HH:mm}",
         _ => "运行中",
     };
+
+    private static string DescribeNextWindow(AppConfig config)
+    {
+        if (config.Schedule.TimeWindows.Length == 0) return "未配置时段";
+        var now = TimeOnly.FromDateTime(DateTime.Now);
+        TimeOnly? nextStart = null;
+        foreach (var w in config.Schedule.TimeWindows)
+        {
+            if (w.Start > now && (nextStart == null || w.Start < nextStart))
+            {
+                nextStart = w.Start;
+            }
+        }
+        return nextStart.HasValue
+            ? $"等到 {nextStart.Value:HH:mm} 开拍"
+            : "今天已收工";
+    }
 
     private async Task OnCaptureRequestedAsync(AppConfig config)
     {
