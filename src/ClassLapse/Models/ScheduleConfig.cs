@@ -11,9 +11,11 @@ public sealed class ScheduleConfig
         DayOfWeek.Friday,
     };
 
-    public TimeOnly StartTime { get; set; } = new(8, 0);
-
-    public TimeOnly EndTime { get; set; } = new(17, 0);
+    public TimeWindow[] TimeWindows { get; set; } = new[]
+    {
+        new TimeWindow(new TimeOnly(8, 0), new TimeOnly(11, 30)),
+        new TimeWindow(new TimeOnly(13, 30), new TimeOnly(17, 0)),
+    };
 
     public int IntervalSeconds { get; set; } = 30;
 }

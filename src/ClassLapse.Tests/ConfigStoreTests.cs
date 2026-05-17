@@ -33,8 +33,12 @@ public class ConfigStoreTests : IDisposable
         var config = store.Load();
 
         Assert.Equal(30, config.Schedule.IntervalSeconds);
-        Assert.Equal(new TimeOnly(8, 0), config.Schedule.StartTime);
-        Assert.Equal(new TimeOnly(17, 0), config.Schedule.EndTime);
+        Assert.Equal(2, config.Schedule.TimeWindows.Length);
+        Assert.Equal(new TimeOnly(8, 0), config.Schedule.TimeWindows[0].Start);
+        Assert.Equal(new TimeOnly(11, 30), config.Schedule.TimeWindows[0].End);
+        Assert.Equal(new TimeOnly(13, 30), config.Schedule.TimeWindows[1].Start);
+        Assert.Equal(new TimeOnly(17, 0), config.Schedule.TimeWindows[1].End);
+        Assert.True(config.Camera.UseHighestResolution);
         Assert.True(config.AutoStartWithWindows);
         Assert.Equal(85, config.Camera.JpegQuality);
     }
@@ -48,14 +52,19 @@ public class ConfigStoreTests : IDisposable
             Schedule = new ScheduleConfig
             {
                 ActiveDays = new[] { DayOfWeek.Saturday, DayOfWeek.Sunday },
-                StartTime = new TimeOnly(9, 30),
-                EndTime = new TimeOnly(16, 45),
+                TimeWindows = new[]
+                {
+                    new TimeWindow(new TimeOnly(9, 30), new TimeOnly(12, 0)),
+                    new TimeWindow(new TimeOnly(13, 0), new TimeOnly(16, 45)),
+                    new TimeWindow(new TimeOnly(18, 30), new TimeOnly(21, 0)),
+                },
                 IntervalSeconds = 15,
             },
             Camera = new CameraConfig
             {
                 DeviceMoniker = "@device:pnp:test",
                 FriendlyName = "Test Cam",
+                UseHighestResolution = false,
                 Width = 640,
                 Height = 480,
                 JpegQuality = 70,
@@ -75,9 +84,12 @@ public class ConfigStoreTests : IDisposable
         var read = store.Load();
 
         Assert.Equal(15, read.Schedule.IntervalSeconds);
-        Assert.Equal(new TimeOnly(9, 30), read.Schedule.StartTime);
+        Assert.Equal(3, read.Schedule.TimeWindows.Length);
+        Assert.Equal(new TimeOnly(9, 30), read.Schedule.TimeWindows[0].Start);
+        Assert.Equal(new TimeOnly(21, 0), read.Schedule.TimeWindows[2].End);
         Assert.Equal(new[] { DayOfWeek.Saturday, DayOfWeek.Sunday }, read.Schedule.ActiveDays);
         Assert.Equal("Test Cam", read.Camera.FriendlyName);
+        Assert.False(read.Camera.UseHighestResolution);
         Assert.Equal(640, read.Camera.Width);
         Assert.Equal(@"D:\out", read.Storage.OutputFolder);
         Assert.True(read.Storage.AutoCleanupEnabled);

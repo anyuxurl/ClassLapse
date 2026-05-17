@@ -36,6 +36,7 @@ public sealed class CameraService
         int desiredWidth,
         int desiredHeight,
         int jpegQuality,
+        bool useHighestResolution = false,
         CancellationToken ct = default)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -55,7 +56,7 @@ public sealed class CameraService
             return Failed(sw, FailureReason.DeviceNotFound, $"Cannot instantiate device: {ex.Message}");
         }
 
-        SelectResolution(device, desiredWidth, desiredHeight);
+        SelectResolution(device, desiredWidth, desiredHeight, useHighestResolution);
 
         var tcs = new TaskCompletionSource<Bitmap?>(TaskCreationOptions.RunContinuationsAsynchronously);
         string? deviceErrorDescription = null;
@@ -144,22 +145,39 @@ public sealed class CameraService
         }
     }
 
-    private static void SelectResolution(VideoCaptureDevice device, int targetWidth, int targetHeight)
+    private static void SelectResolution(VideoCaptureDevice device, int targetWidth, int targetHeight, bool useHighest)
     {
         var caps = device.VideoCapabilities;
         if (caps == null || caps.Length == 0) return;
 
         VideoCapabilities best = caps[0];
-        int bestScore = int.MaxValue;
-        foreach (var c in caps)
+
+        if (useHighest)
         {
-            int dw = c.FrameSize.Width - targetWidth;
-            int dh = c.FrameSize.Height - targetHeight;
-            int score = (dw * dw) + (dh * dh);
-            if (score < bestScore)
+            int bestArea = 0;
+            foreach (var c in caps)
             {
-                bestScore = score;
-                best = c;
+                int area = c.FrameSize.Width * c.FrameSize.Height;
+                if (area > bestArea)
+                {
+                    bestArea = area;
+                    best = c;
+                }
+            }
+        }
+        else
+        {
+            int bestScore = int.MaxValue;
+            foreach (var c in caps)
+            {
+                int dw = c.FrameSize.Width - targetWidth;
+                int dh = c.FrameSize.Height - targetHeight;
+                int score = (dw * dw) + (dh * dh);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = c;
+                }
             }
         }
         device.VideoResolution = best;

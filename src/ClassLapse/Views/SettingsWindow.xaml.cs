@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using ClassLapse.Core;
 using ClassLapse.Models;
 using Microsoft.Win32;
@@ -13,15 +14,22 @@ namespace ClassLapse.Views;
 [SupportedOSPlatform("windows")]
 public partial class SettingsWindow : Window
 {
+    private static readonly string[] CircledNumbers =
+        { "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩" };
+
     private readonly ConfigStore _configStore;
     private readonly CameraService _cameraService;
+    private readonly bool _isFirstRun;
     private AppConfig _config;
     private bool _loaded;
 
-    public SettingsWindow(ConfigStore configStore, CameraService cameraService)
+    private readonly List<TimeWindowRow> _windowRows = new();
+
+    public SettingsWindow(ConfigStore configStore, CameraService cameraService, bool isFirstRun = false)
     {
         _configStore = configStore;
         _cameraService = cameraService;
+        _isFirstRun = isFirstRun;
         _config = _configStore.Load();
 
         InitializeComponent();
@@ -30,10 +38,18 @@ public partial class SettingsWindow : Window
 
     private void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
+        if (_isFirstRun)
+        {
+            FirstRunBanner.Visibility = Visibility.Visible;
+            CancelButton.Content = "退出程序";
+            Title = "ClassLapse · 首次运行设置";
+        }
+
         PopulateFromConfig(_config);
         PopulateCameras(selectMoniker: _config.Camera.DeviceMoniker);
         VersionText.Text = "版本 " + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0");
         ConfigPathBox.Text = _configStore.FilePath;
+        ApplyHighestResolutionLock();
         _loaded = true;
         UpdateEstimate();
     }
@@ -48,10 +64,23 @@ public partial class SettingsWindow : Window
         DaySat.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Saturday);
         DaySun.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Sunday);
 
-        StartTimeBox.Text = config.Schedule.StartTime.ToString("HH:mm");
-        EndTimeBox.Text = config.Schedule.EndTime.ToString("HH:mm");
+        TimeWindowsPanel.Children.Clear();
+        _windowRows.Clear();
+        if (config.Schedule.TimeWindows.Length == 0)
+        {
+            AddTimeWindowRow(new TimeOnly(8, 0), new TimeOnly(17, 0));
+        }
+        else
+        {
+            foreach (var w in config.Schedule.TimeWindows)
+            {
+                AddTimeWindowRow(w.Start, w.End);
+            }
+        }
+
         IntervalBox.Text = config.Schedule.IntervalSeconds.ToString();
 
+        HighestResCheck.IsChecked = config.Camera.UseHighestResolution;
         WidthBox.Text = config.Camera.Width.ToString();
         HeightBox.Text = config.Camera.Height.ToString();
         QualitySlider.Value = config.Camera.JpegQuality;
@@ -61,6 +90,7 @@ public partial class SettingsWindow : Window
         AutoCleanupCheck.IsChecked = config.Storage.AutoCleanupEnabled;
         CleanupDaysBox.Text = config.Storage.AutoCleanupDays.ToString();
         MaxDiskBox.Text = config.Storage.MaxDiskUsageGB.ToString();
+        OnAutoCleanupToggle(this, new RoutedEventArgs());
 
         AutoStartCheck.IsChecked = config.AutoStartWithWindows;
     }
@@ -99,36 +129,169 @@ public partial class SettingsWindow : Window
         PopulateCameras(currentMoniker);
     }
 
+    // ----- time windows dynamic rows -----
+
+    private sealed class TimeWindowRow
+    {
+        public Border Container { get; }
+        public TextBox StartBox { get; }
+        public TextBox EndBox { get; }
+        public TextBlock IndexText { get; }
+
+        public TimeWindowRow(Border container, TextBox start, TextBox end, TextBlock indexText)
+        {
+            Container = container;
+            StartBox = start;
+            EndBox = end;
+            IndexText = indexText;
+        }
+    }
+
+    private void AddTimeWindowRow(TimeOnly start, TimeOnly end)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 4, 0, 0) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Star });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+
+        var indexText = new TextBlock
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Foreground = Brushes.DimGray,
+            FontSize = 14,
+        };
+        Grid.SetColumn(indexText, 0);
+        grid.Children.Add(indexText);
+
+        var startBox = new TextBox
+        {
+            Text = start.ToString("HH:mm"),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(4, 3, 4, 3),
+        };
+        startBox.TextChanged += OnScheduleChanged;
+        Grid.SetColumn(startBox, 1);
+        grid.Children.Add(startBox);
+
+        var toLabel = new TextBlock
+        {
+            Text = "至",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = Brushes.DimGray,
+        };
+        Grid.SetColumn(toLabel, 2);
+        grid.Children.Add(toLabel);
+
+        var endBox = new TextBox
+        {
+            Text = end.ToString("HH:mm"),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(4, 3, 4, 3),
+        };
+        endBox.TextChanged += OnScheduleChanged;
+        Grid.SetColumn(endBox, 3);
+        grid.Children.Add(endBox);
+
+        var deleteBtn = new Button
+        {
+            Content = "删除",
+            Padding = new Thickness(4, 1, 4, 1),
+        };
+        Grid.SetColumn(deleteBtn, 5);
+        grid.Children.Add(deleteBtn);
+
+        var border = new Border { Child = grid };
+        var row = new TimeWindowRow(border, startBox, endBox, indexText);
+        deleteBtn.Click += (_, _) =>
+        {
+            _windowRows.Remove(row);
+            TimeWindowsPanel.Children.Remove(border);
+            RefreshWindowRowIndices();
+            UpdateEstimate();
+        };
+
+        _windowRows.Add(row);
+        TimeWindowsPanel.Children.Add(border);
+        RefreshWindowRowIndices();
+    }
+
+    private void RefreshWindowRowIndices()
+    {
+        for (int i = 0; i < _windowRows.Count; i++)
+        {
+            _windowRows[i].IndexText.Text = i < CircledNumbers.Length
+                ? CircledNumbers[i]
+                : (i + 1).ToString();
+        }
+    }
+
+    private void OnAddTimeWindowClick(object sender, RoutedEventArgs e)
+    {
+        TimeOnly defaultStart = new(8, 0);
+        TimeOnly defaultEnd = new(11, 30);
+        if (_windowRows.Count > 0)
+        {
+            // Default to "right after the last window ends"
+            if (TimeOnly.TryParseExact(_windowRows[^1].EndBox.Text, "HH:mm", out var prevEnd))
+            {
+                defaultStart = prevEnd;
+                defaultEnd = TimeOnly.FromTimeSpan(prevEnd.ToTimeSpan().Add(TimeSpan.FromHours(2)));
+                if (defaultEnd < defaultStart) defaultEnd = new TimeOnly(23, 59);
+            }
+        }
+        AddTimeWindowRow(defaultStart, defaultEnd);
+        UpdateEstimate();
+    }
+
+    // ----- estimate -----
+
     private void OnScheduleChanged(object sender, TextChangedEventArgs e) => UpdateEstimate();
+    private void OnScheduleStructureChanged(object sender, RoutedEventArgs e) => UpdateEstimate();
 
     private void UpdateEstimate()
     {
         if (!_loaded) return;
 
-        if (!TimeOnly.TryParseExact(StartTimeBox.Text, "HH:mm", out var start) ||
-            !TimeOnly.TryParseExact(EndTimeBox.Text, "HH:mm", out var end) ||
-            !int.TryParse(IntervalBox.Text, out var interval) ||
-            interval < 1 || end <= start)
+        if (!int.TryParse(IntervalBox.Text, out var interval) || interval < 1)
         {
-            EstimateText.Text = "（请填写有效的时间窗口和间隔）";
+            EstimateText.Text = "（请填写有效的拍照间隔）";
+            return;
+        }
+
+        if (!TryCollectTimeWindows(out var windows, out string? winErr))
+        {
+            EstimateText.Text = "（时段配置错误：" + winErr + "）";
             return;
         }
 
         int dayCount = CollectActiveDays().Length;
         if (dayCount == 0)
         {
-            EstimateText.Text = "（至少要勾选一天）";
+            EstimateText.Text = "（至少要勾选一个生效日）";
             return;
         }
 
-        var windowSeconds = (end.ToTimeSpan() - start.ToTimeSpan()).TotalSeconds;
-        int perDay = (int)Math.Floor(windowSeconds / interval) + 1;
+        double totalSecondsPerDay = 0;
+        var windowParts = new List<string>();
+        foreach (var w in windows)
+        {
+            double seconds = (w.End.ToTimeSpan() - w.Start.ToTimeSpan()).TotalSeconds;
+            totalSecondsPerDay += seconds;
+            windowParts.Add($"{w.Start:HH:mm}-{w.End:HH:mm} ({seconds / 60:N0} 分)");
+        }
+
+        int perDay = (int)Math.Floor(totalSecondsPerDay / interval) + windows.Length;
         int perWeek = perDay * dayCount;
-        var approxKb = perDay * 250.0 / 1024.0;
+        var approxMb = perDay * 800.0 / 1024.0; // assume ~800KB/jpg at full res
 
         EstimateText.Text =
-            $"每个生效日约 {perDay:N0} 张，每周共 {perWeek:N0} 张" +
-            $"（按 720p 平均 250KB 估算，单日约 {approxKb:N1} MB）";
+            $"每个生效日 {windows.Length} 段（{string.Join("，", windowParts)}）共 {totalSecondsPerDay / 60:N0} 分钟" +
+            $"\n约 {perDay:N0} 张/天，{perWeek:N0} 张/周（按全分辨率 ~800KB 估算，约 {approxMb:N1} MB/天）";
     }
 
     private DayOfWeek[] CollectActiveDays()
@@ -142,6 +305,70 @@ public partial class SettingsWindow : Window
         if (DaySat.IsChecked == true) list.Add(DayOfWeek.Saturday);
         if (DaySun.IsChecked == true) list.Add(DayOfWeek.Sunday);
         return list.ToArray();
+    }
+
+    private bool TryCollectTimeWindows(out TimeWindow[] windows, out string? error)
+    {
+        windows = Array.Empty<TimeWindow>();
+        error = null;
+
+        if (_windowRows.Count == 0)
+        {
+            error = "至少要保留一个时段";
+            return false;
+        }
+
+        var list = new List<TimeWindow>(_windowRows.Count);
+        for (int i = 0; i < _windowRows.Count; i++)
+        {
+            var row = _windowRows[i];
+            string startText = row.StartBox.Text.Trim();
+            string endText = row.EndBox.Text.Trim();
+            if (!TimeOnly.TryParseExact(startText, "HH:mm", out var s))
+            {
+                error = $"时段 {i + 1} 的起始时间 '{startText}' 格式应为 HH:mm";
+                return false;
+            }
+            if (!TimeOnly.TryParseExact(endText, "HH:mm", out var endVal))
+            {
+                error = $"时段 {i + 1} 的结束时间 '{endText}' 格式应为 HH:mm";
+                return false;
+            }
+            if (endVal <= s)
+            {
+                error = $"时段 {i + 1} 的结束时间必须晚于起始时间";
+                return false;
+            }
+            list.Add(new TimeWindow(s, endVal));
+        }
+
+        // sort + 简单重叠检测
+        var sorted = list.OrderBy(w => w.Start).ToList();
+        for (int i = 1; i < sorted.Count; i++)
+        {
+            if (sorted[i].Start < sorted[i - 1].End)
+            {
+                error = $"时段 {sorted[i - 1].Start:HH:mm}-{sorted[i - 1].End:HH:mm} 与 {sorted[i].Start:HH:mm}-{sorted[i].End:HH:mm} 重叠";
+                return false;
+            }
+        }
+
+        windows = sorted.ToArray();
+        return true;
+    }
+
+    // ----- camera / quality / cleanup toggles -----
+
+    private void OnHighestResToggle(object sender, RoutedEventArgs e)
+    {
+        ApplyHighestResolutionLock();
+    }
+
+    private void ApplyHighestResolutionLock()
+    {
+        bool useHighest = HighestResCheck.IsChecked == true;
+        WidthBox.IsEnabled = !useHighest;
+        HeightBox.IsEnabled = !useHighest;
     }
 
     private void OnQualityChanged(object sender, System.Windows.RoutedPropertyChangedEventArgs<double> e)
@@ -192,9 +419,11 @@ public partial class SettingsWindow : Window
         if (!int.TryParse(WidthBox.Text, out int w) || w < 1) w = 1280;
         if (!int.TryParse(HeightBox.Text, out int h) || h < 1) h = 720;
         if (!int.TryParse(QualityBox.Text, out int q) || q < 1 || q > 100) q = 85;
+        bool useHighest = HighestResCheck.IsChecked == true;
 
         CameraTestResult.Text = "正在拍摄...";
-        var result = await _cameraService.TryCaptureAsync(device.MonikerString, w, h, q);
+        var result = await _cameraService.TryCaptureAsync(
+            device.MonikerString, w, h, q, useHighestResolution: useHighest);
 
         if (!result.Success)
         {
@@ -234,6 +463,8 @@ public partial class SettingsWindow : Window
             SetStatus("无法打开配置文件: " + ex.Message);
         }
     }
+
+    // ----- save / cancel -----
 
     private void OnSaveClick(object sender, RoutedEventArgs e)
     {
@@ -275,19 +506,9 @@ public partial class SettingsWindow : Window
             return false;
         }
 
-        if (!TimeOnly.TryParseExact(StartTimeBox.Text, "HH:mm", out var start))
+        if (!TryCollectTimeWindows(out var windows, out string? winError))
         {
-            error = "起始时间格式错误，请用 HH:mm";
-            return false;
-        }
-        if (!TimeOnly.TryParseExact(EndTimeBox.Text, "HH:mm", out var end))
-        {
-            error = "结束时间格式错误，请用 HH:mm";
-            return false;
-        }
-        if (end <= start)
-        {
-            error = "结束时间必须晚于起始时间";
+            error = winError;
             return false;
         }
 
@@ -297,16 +518,23 @@ public partial class SettingsWindow : Window
             return false;
         }
 
-        if (!int.TryParse(WidthBox.Text, out int width) || width < 1)
+        bool useHighest = HighestResCheck.IsChecked == true;
+        int width = _config.Camera.Width;
+        int height = _config.Camera.Height;
+        if (!useHighest)
         {
-            error = "宽度必须是正整数";
-            return false;
+            if (!int.TryParse(WidthBox.Text, out width) || width < 1)
+            {
+                error = "宽度必须是正整数";
+                return false;
+            }
+            if (!int.TryParse(HeightBox.Text, out height) || height < 1)
+            {
+                error = "高度必须是正整数";
+                return false;
+            }
         }
-        if (!int.TryParse(HeightBox.Text, out int height) || height < 1)
-        {
-            error = "高度必须是正整数";
-            return false;
-        }
+
         if (!int.TryParse(QualityBox.Text, out int quality) || quality < 1 || quality > 100)
         {
             error = "JPEG 质量必须在 1-100 之间";
@@ -347,20 +575,25 @@ public partial class SettingsWindow : Window
         }
 
         var selectedCam = CameraCombo.SelectedItem as Models.CameraDevice;
+        if (selectedCam == null)
+        {
+            error = "请选择一个摄像头";
+            return false;
+        }
 
         built = new AppConfig
         {
             Schedule = new ScheduleConfig
             {
                 ActiveDays = days,
-                StartTime = start,
-                EndTime = end,
+                TimeWindows = windows,
                 IntervalSeconds = interval,
             },
             Camera = new CameraConfig
             {
-                DeviceMoniker = selectedCam?.MonikerString ?? _config.Camera.DeviceMoniker,
-                FriendlyName = selectedCam?.FriendlyName ?? _config.Camera.FriendlyName,
+                DeviceMoniker = selectedCam.MonikerString,
+                FriendlyName = selectedCam.FriendlyName,
+                UseHighestResolution = useHighest,
                 Width = width,
                 Height = height,
                 JpegQuality = quality,

@@ -75,7 +75,7 @@ public static class DevCli
 
         var service = new CameraService();
         var sw = Stopwatch.StartNew();
-        var result = await service.TryCaptureAsync(device.MonikerString, 1280, 720, 85);
+        var result = await service.TryCaptureAsync(device.MonikerString, 0, 0, 90, useHighestResolution: true);
         sw.Stop();
 
         if (!result.Success)

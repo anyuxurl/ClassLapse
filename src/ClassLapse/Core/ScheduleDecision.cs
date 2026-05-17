@@ -8,8 +8,7 @@ public static class ScheduleDecision
     {
         ShouldCapture,
         OutsideActiveDay,
-        BeforeWindow,
-        AfterWindow,
+        OutsideTimeWindows,
         TooSoon,
         Paused,
     }
@@ -19,9 +18,8 @@ public static class ScheduleDecision
     /// determine whether a capture should happen now (and if not, why not).
     /// </summary>
     /// <remarks>
-    /// The schedule window is [StartTime, EndTime) — start inclusive, end exclusive.
-    /// Pause takes priority over every other reason: an explicit user pause means
-    /// "stop, regardless of schedule".
+    /// Each window is [Start, End) — start inclusive, end exclusive. The reading must
+    /// fall in at least one window. Pause takes priority over every other reason.
     /// </remarks>
     public static Reason Evaluate(
         DateTime now,
@@ -40,13 +38,18 @@ public static class ScheduleDecision
         }
 
         var nowTime = TimeOnly.FromDateTime(now);
-        if (nowTime < schedule.StartTime)
+        bool inAnyWindow = false;
+        foreach (var w in schedule.TimeWindows)
         {
-            return Reason.BeforeWindow;
+            if (w.Contains(nowTime))
+            {
+                inAnyWindow = true;
+                break;
+            }
         }
-        if (nowTime >= schedule.EndTime)
+        if (!inAnyWindow)
         {
-            return Reason.AfterWindow;
+            return Reason.OutsideTimeWindows;
         }
 
         if (lastCaptureAt is { } last)

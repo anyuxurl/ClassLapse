@@ -13,8 +13,25 @@ public class ScheduleDecisionTests
             DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
             DayOfWeek.Thursday, DayOfWeek.Friday,
         },
-        StartTime = new TimeOnly(8, 0),
-        EndTime = new TimeOnly(17, 0),
+        TimeWindows = new[]
+        {
+            new TimeWindow(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+        },
+        IntervalSeconds = 30,
+    };
+
+    private static ScheduleConfig MorningAndAfternoon() => new()
+    {
+        ActiveDays = new[]
+        {
+            DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
+            DayOfWeek.Thursday, DayOfWeek.Friday,
+        },
+        TimeWindows = new[]
+        {
+            new TimeWindow(new TimeOnly(8, 0), new TimeOnly(11, 30)),
+            new TimeWindow(new TimeOnly(13, 30), new TimeOnly(17, 0)),
+        },
         IntervalSeconds = 30,
     };
 
@@ -31,13 +48,13 @@ public class ScheduleDecisionTests
     }
 
     [Fact]
-    public void Monday_one_second_before_start_is_BeforeWindow()
+    public void Monday_one_second_before_start_is_OutsideTimeWindows()
     {
         var mondayJustBefore = new DateTime(2026, 5, 18, 7, 59, 59);
 
         var result = ScheduleDecision.Evaluate(mondayJustBefore, null, WeekdaysEightToFive(), null);
 
-        Assert.Equal(ScheduleDecision.Reason.BeforeWindow, result);
+        Assert.Equal(ScheduleDecision.Reason.OutsideTimeWindows, result);
     }
 
     [Fact]
@@ -61,14 +78,14 @@ public class ScheduleDecisionTests
     }
 
     [Fact]
-    public void Monday_exactly_at_end_time_is_AfterWindow()
+    public void Monday_exactly_at_end_time_is_OutsideTimeWindows()
     {
         // End is exclusive: 17:00:00 means "do not capture at or after 17:00".
         var mondayAtEnd = new DateTime(2026, 5, 18, 17, 0, 0);
 
         var result = ScheduleDecision.Evaluate(mondayAtEnd, null, WeekdaysEightToFive(), null);
 
-        Assert.Equal(ScheduleDecision.Reason.AfterWindow, result);
+        Assert.Equal(ScheduleDecision.Reason.OutsideTimeWindows, result);
     }
 
     [Fact]
@@ -128,12 +145,60 @@ public class ScheduleDecisionTests
     [Fact]
     public void Paused_takes_priority_over_OutsideActiveDay()
     {
-        // Sunday + paused-in-future: Paused should win since pause is the more recent user action.
         var sundayDuringDay = new DateTime(2026, 5, 17, 12, 0, 0);
         var pausedUntil = new DateTime(2026, 5, 17, 13, 0, 0);
 
         var result = ScheduleDecision.Evaluate(sundayDuringDay, null, WeekdaysEightToFive(), pausedUntil);
 
         Assert.Equal(ScheduleDecision.Reason.Paused, result);
+    }
+
+    // --- multi-window cases ---
+
+    [Fact]
+    public void Noon_between_morning_and_afternoon_is_OutsideTimeWindows()
+    {
+        // Mon 12:00 — students at lunch, both windows closed.
+        var lunch = new DateTime(2026, 5, 18, 12, 0, 0);
+
+        var result = ScheduleDecision.Evaluate(lunch, null, MorningAndAfternoon(), null);
+
+        Assert.Equal(ScheduleDecision.Reason.OutsideTimeWindows, result);
+    }
+
+    [Fact]
+    public void End_of_morning_window_is_OutsideTimeWindows()
+    {
+        // 11:30 exactly — exclusive end of first window, not yet in second.
+        var endOfMorning = new DateTime(2026, 5, 18, 11, 30, 0);
+
+        var result = ScheduleDecision.Evaluate(endOfMorning, null, MorningAndAfternoon(), null);
+
+        Assert.Equal(ScheduleDecision.Reason.OutsideTimeWindows, result);
+    }
+
+    [Fact]
+    public void Start_of_afternoon_window_is_ShouldCapture()
+    {
+        // 13:30 exactly — inclusive start of second window.
+        var startOfAfternoon = new DateTime(2026, 5, 18, 13, 30, 0);
+
+        var result = ScheduleDecision.Evaluate(startOfAfternoon, null, MorningAndAfternoon(), null);
+
+        Assert.Equal(ScheduleDecision.Reason.ShouldCapture, result);
+    }
+
+    [Fact]
+    public void Inside_either_window_is_ShouldCapture()
+    {
+        var morningInside = new DateTime(2026, 5, 18, 9, 0, 0);
+        var afternoonInside = new DateTime(2026, 5, 18, 15, 0, 0);
+
+        Assert.Equal(
+            ScheduleDecision.Reason.ShouldCapture,
+            ScheduleDecision.Evaluate(morningInside, null, MorningAndAfternoon(), null));
+        Assert.Equal(
+            ScheduleDecision.Reason.ShouldCapture,
+            ScheduleDecision.Evaluate(afternoonInside, null, MorningAndAfternoon(), null));
     }
 }

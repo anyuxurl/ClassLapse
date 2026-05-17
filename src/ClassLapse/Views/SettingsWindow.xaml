@@ -2,8 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ClassLapse 设置"
-        Width="660" Height="560"
-        MinWidth="520" MinHeight="420"
+        Width="680" Height="600"
+        MinWidth="540" MinHeight="460"
         WindowStartupLocation="CenterScreen"
         ShowInTaskbar="True">
 
@@ -24,13 +24,25 @@
 
     <DockPanel LastChildFill="True">
 
+        <!-- 首次运行 banner（默认隐藏，构造器控制） -->
+        <Border x:Name="FirstRunBanner" DockPanel.Dock="Top"
+                Background="#FFF8E1" BorderBrush="#F0C419" BorderThickness="0,0,0,1"
+                Padding="16,12" Visibility="Collapsed">
+            <StackPanel>
+                <TextBlock Text="👋 欢迎使用 ClassLapse · 课堂延时"
+                           FontSize="15" FontWeight="SemiBold" Foreground="#664D03"/>
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Foreground="#806230"
+                           Text="第一次启动，请把下面 3 个 Tab 都过一遍：选摄像头（避开展台）→ 选输出文件夹 → 调整拍照计划。完成后点&quot;确定&quot;开始工作。"/>
+            </StackPanel>
+        </Border>
+
         <Border DockPanel.Dock="Bottom" BorderBrush="#DDD" BorderThickness="0,1,0,0" Padding="12,8">
             <Grid>
                 <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#666"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="确定" Width="88" Height="28" Margin="6,0"
+                    <Button x:Name="OkButton" Content="确定" Width="88" Height="28" Margin="6,0"
                             Click="OnSaveClick" IsDefault="True"/>
-                    <Button Content="取消" Width="88" Height="28" Margin="6,0,0,0"
+                    <Button x:Name="CancelButton" Content="取消" Width="88" Height="28" Margin="6,0,0,0"
                             Click="OnCancelClick" IsCancel="True"/>
                 </StackPanel>
             </Grid>
@@ -45,22 +57,21 @@
 
                         <Label Content="生效星期"/>
                         <UniformGrid Rows="1" Columns="7">
-                            <CheckBox x:Name="DayMon" Content="周一"/>
-                            <CheckBox x:Name="DayTue" Content="周二"/>
-                            <CheckBox x:Name="DayWed" Content="周三"/>
-                            <CheckBox x:Name="DayThu" Content="周四"/>
-                            <CheckBox x:Name="DayFri" Content="周五"/>
-                            <CheckBox x:Name="DaySat" Content="周六"/>
-                            <CheckBox x:Name="DaySun" Content="周日"/>
+                            <CheckBox x:Name="DayMon" Content="周一" Click="OnScheduleStructureChanged"/>
+                            <CheckBox x:Name="DayTue" Content="周二" Click="OnScheduleStructureChanged"/>
+                            <CheckBox x:Name="DayWed" Content="周三" Click="OnScheduleStructureChanged"/>
+                            <CheckBox x:Name="DayThu" Content="周四" Click="OnScheduleStructureChanged"/>
+                            <CheckBox x:Name="DayFri" Content="周五" Click="OnScheduleStructureChanged"/>
+                            <CheckBox x:Name="DaySat" Content="周六" Click="OnScheduleStructureChanged"/>
+                            <CheckBox x:Name="DaySun" Content="周日" Click="OnScheduleStructureChanged"/>
                         </UniformGrid>
 
-                        <Label Content="拍照时间窗口"/>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBox x:Name="StartTimeBox" Width="80" TextChanged="OnScheduleChanged"/>
-                            <TextBlock Text="  到  " VerticalAlignment="Center"/>
-                            <TextBox x:Name="EndTimeBox" Width="80" TextChanged="OnScheduleChanged"/>
-                            <TextBlock Text="   (格式 HH:mm，结束时间不含)" VerticalAlignment="Center" Foreground="#888"/>
-                        </StackPanel>
+                        <Label Content="拍照时段（每段都是 [Start, End)，中间空档自动不拍）"/>
+                        <StackPanel x:Name="TimeWindowsPanel"/>
+                        <Button x:Name="AddWindowButton" Content="+ 添加时段" Width="120" HorizontalAlignment="Left"
+                                Margin="0,6,0,0" Click="OnAddTimeWindowClick"/>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="典型用法：上午 08:00-11:30、下午 13:30-17:00。学生午饭/放学时段不会拍空教室。"/>
 
                         <Label Content="拍照间隔（秒）"/>
                         <StackPanel Orientation="Horizontal">
@@ -92,7 +103,12 @@
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="提示：避开老师上课会用的展台、希沃自带相机等设备"/>
 
-                        <Label Content="目标分辨率"/>
+                        <CheckBox x:Name="HighestResCheck" Content="使用设备最高分辨率（推荐 — 画质最佳）"
+                                  Margin="0,16,0,0" Click="OnHighestResToggle"/>
+                        <TextBlock Style="{StaticResource HintText}"
+                                   Text="勾选后忽略下面的目标分辨率，按摄像头能输出的最大分辨率拍摄"/>
+
+                        <Label Content="目标分辨率（仅在未勾选&quot;最高分辨率&quot;时生效）"/>
                         <StackPanel Orientation="Horizontal">
                             <TextBox x:Name="WidthBox" Width="80"/>
                             <TextBlock Text="  ×  " VerticalAlignment="Center"/>
@@ -112,7 +128,8 @@
                         <Button Content="📷  用当前摄像头拍一张测试" Width="280" Height="32"
                                 Margin="0,16,0,0" HorizontalAlignment="Left"
                                 Click="OnTestCaptureClick"/>
-                        <TextBlock x:Name="CameraTestResult" Margin="0,8,0,0" Foreground="#444"/>
+                        <TextBlock x:Name="CameraTestResult" Margin="0,8,0,0" Foreground="#444"
+                                   TextWrapping="Wrap"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -125,7 +142,7 @@
 
                         <Label Content="输出文件夹"/>
                         <StackPanel Orientation="Horizontal">
-                            <TextBox x:Name="OutputFolderBox" Width="460"/>
+                            <TextBox x:Name="OutputFolderBox" Width="480"/>
                             <Button Content="浏览..." Width="80" Margin="8,0,0,0"
                                     Click="OnBrowseFolderClick"/>
                         </StackPanel>

@@ -206,7 +206,8 @@ public sealed class TrayApp : IDisposable
             config.Camera.DeviceMoniker,
             config.Camera.Width,
             config.Camera.Height,
-            config.Camera.JpegQuality);
+            config.Camera.JpegQuality,
+            useHighestResolution: config.Camera.UseHighestResolution);
 
         if (!result.Success)
         {
