@@ -200,19 +200,34 @@ public sealed class TrayApp : IDisposable
 
     private static string DescribeNextWindow(AppConfig config)
     {
-        if (config.Schedule.TimeWindows.Length == 0) return "未配置时段";
-        var now = TimeOnly.FromDateTime(DateTime.Now);
-        TimeOnly? nextStart = null;
-        foreach (var w in config.Schedule.TimeWindows)
+        var now = DateTime.Now;
+        var nowTime = TimeOnly.FromDateTime(now);
+        var today = now.DayOfWeek;
+
+        // Earliest still-upcoming capture time today across every enabled entry active today:
+        // interval entries contribute their window start, specific entries each remaining point.
+        TimeOnly? next = null;
+        foreach (var entry in config.Schedule.Entries)
         {
-            if (w.Start > now && (nextStart == null || w.Start < nextStart))
+            if (!entry.Enabled) continue;
+            if (Array.IndexOf(entry.ActiveDays, today) < 0) continue;
+
+            if (entry.Mode == ScheduleMode.Interval)
             {
-                nextStart = w.Start;
+                Consider(entry.Window.Start);
+            }
+            else
+            {
+                foreach (var p in entry.Times) Consider(p);
             }
         }
-        return nextStart.HasValue
-            ? $"等到 {nextStart.Value:HH:mm} 开拍"
-            : "今天已收工";
+
+        return next.HasValue ? $"等到 {next.Value:HH:mm} 开拍" : "今天已收工";
+
+        void Consider(TimeOnly t)
+        {
+            if (t > nowTime && (next is null || t < next)) next = t;
+        }
     }
 
     private async Task OnCaptureRequestedAsync(AppConfig config)

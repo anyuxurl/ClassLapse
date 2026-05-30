@@ -2,6 +2,13 @@ using ClassLapse.Models;
 
 namespace ClassLapse.Core;
 
+/// <summary>
+/// The aggregate result of one schedule evaluation: a single <see cref="ScheduleDecision.Reason"/>
+/// for the tray UI, plus the ids of every entry that wants a capture right now
+/// (non-empty only when <see cref="Reason"/> is <see cref="ScheduleDecision.Reason.ShouldCapture"/>).
+/// </summary>
+public sealed record ScheduleEvaluation(ScheduleDecision.Reason Reason, string[] DueEntryIds);
+
 public static class ScheduleDecision
 {
     public enum Reason
@@ -14,53 +21,106 @@ public static class ScheduleDecision
     }
 
     /// <summary>
-    /// Pure decision: given a clock reading, last capture time, schedule, and pause state,
-    /// determine whether a capture should happen now (and if not, why not).
+    /// A SpecificTimes point fires once when a tick lands in <c>[P, P + tolerance)</c>.
+    /// 60s == the resolution of the HH:mm input, so this is "fire during the scheduled minute".
+    /// </summary>
+    public static readonly TimeSpan SpecificTimeTolerance = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Pure decision over the whole entry list. Each enabled entry is judged independently
+    /// against its own last-capture (looked up by <see cref="ScheduleEntry.Id"/>); the result
+    /// reports which entries are due and a single aggregate reason for the tray.
     /// </summary>
     /// <remarks>
-    /// Each window is [Start, End) — start inclusive, end exclusive. The reading must
-    /// fall in at least one window. Pause takes priority over every other reason.
+    /// Aggregate priority (most "active" wins, so the tray never says "waiting" while an entry
+    /// is capturing): Paused &gt; ShouldCapture &gt; TooSoon &gt; OutsideTimeWindows &gt; OutsideActiveDay.
+    /// Pause is global and beats everything.
     /// </remarks>
-    public static Reason Evaluate(
+    public static ScheduleEvaluation Evaluate(
         DateTime now,
-        DateTime? lastCaptureAt,
         ScheduleConfig schedule,
-        DateTime? pausedUntil)
+        DateTime? pausedUntil,
+        IReadOnlyDictionary<string, DateTime> lastByEntryId)
     {
         if (pausedUntil is { } until && until > now)
         {
-            return Reason.Paused;
+            return new ScheduleEvaluation(Reason.Paused, Array.Empty<string>());
         }
 
-        if (Array.IndexOf(schedule.ActiveDays, now.DayOfWeek) < 0)
+        var due = new List<string>();
+        bool anyActiveToday = false;       // some enabled entry runs on this weekday
+        bool anyInWindowTooSoon = false;   // an interval entry is in its window but interval not elapsed
+
+        foreach (var entry in schedule.Entries)
         {
-            return Reason.OutsideActiveDay;
+            if (!entry.Enabled) continue;
+            if (Array.IndexOf(entry.ActiveDays, now.DayOfWeek) < 0) continue;
+            anyActiveToday = true;
+
+            DateTime? last = lastByEntryId.TryGetValue(entry.Id, out var l) ? l : null;
+
+            switch (entry.Mode)
+            {
+                case ScheduleMode.Interval:
+                    if (IsIntervalDue(entry, now, last, out bool tooSoon)) due.Add(entry.Id);
+                    else if (tooSoon) anyInWindowTooSoon = true;
+                    break;
+
+                case ScheduleMode.SpecificTimes:
+                    if (IsSpecificTimeDue(entry, now, last)) due.Add(entry.Id);
+                    break;
+            }
         }
 
+        if (due.Count > 0) return new ScheduleEvaluation(Reason.ShouldCapture, due.ToArray());
+        if (!anyActiveToday) return new ScheduleEvaluation(Reason.OutsideActiveDay, Array.Empty<string>());
+        if (anyInWindowTooSoon) return new ScheduleEvaluation(Reason.TooSoon, Array.Empty<string>());
+        return new ScheduleEvaluation(Reason.OutsideTimeWindows, Array.Empty<string>());
+    }
+
+    /// <summary>
+    /// In-window and the interval has elapsed (or no prior capture) → due. In-window but too soon
+    /// since the last capture → <paramref name="tooSoon"/> is set. Outside the window → neither.
+    /// </summary>
+    private static bool IsIntervalDue(ScheduleEntry entry, DateTime now, DateTime? last, out bool tooSoon)
+    {
+        tooSoon = false;
+        if (!entry.Window.Contains(TimeOnly.FromDateTime(now))) return false;
+
+        if (last is { } l && (now - l).TotalSeconds < entry.IntervalSeconds)
+        {
+            tooSoon = true;
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Due if the current tick lands in <c>[P, P + tolerance)</c> for some listed point P and we
+    /// have not already fired this exact occurrence. The dedup key is the fully-qualified scheduled
+    /// instant (<c>today + P</c>), so yesterday's same-HH:mm capture never suppresses today's.
+    /// </summary>
+    private static bool IsSpecificTimeDue(ScheduleEntry entry, DateTime now, DateTime? last)
+    {
+        var instant = FiringInstant(entry, now);
+        return instant is not null && last != instant;
+    }
+
+    /// <summary>
+    /// The scheduled instant (<c>today + P</c>) of the SpecificTimes point that the current tick
+    /// falls within, ignoring dedup; <c>null</c> if no point is in range. Shared by the decision
+    /// (which then applies dedup) and the scheduler (which stamps this exact instant on fire),
+    /// so both agree on which occurrence fired.
+    /// </summary>
+    internal static DateTime? FiringInstant(ScheduleEntry entry, DateTime now)
+    {
         var nowTime = TimeOnly.FromDateTime(now);
-        bool inAnyWindow = false;
-        foreach (var w in schedule.TimeWindows)
+        foreach (var p in entry.Times)
         {
-            if (w.Contains(nowTime))
-            {
-                inAnyWindow = true;
-                break;
-            }
+            if (nowTime < p) continue;
+            if (nowTime.ToTimeSpan() - p.ToTimeSpan() >= SpecificTimeTolerance) continue;
+            return now.Date + p.ToTimeSpan();
         }
-        if (!inAnyWindow)
-        {
-            return Reason.OutsideTimeWindows;
-        }
-
-        if (lastCaptureAt is { } last)
-        {
-            double elapsedSeconds = (now - last).TotalSeconds;
-            if (elapsedSeconds < schedule.IntervalSeconds)
-            {
-                return Reason.TooSoon;
-            }
-        }
-
-        return Reason.ShouldCapture;
+        return null;
     }
 }

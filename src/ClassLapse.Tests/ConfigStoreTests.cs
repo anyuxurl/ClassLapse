@@ -25,6 +25,21 @@ public class ConfigStoreTests : IDisposable
         }
     }
 
+    // Legacy (v1) on-disk shape: one global ActiveDays + TimeWindows + IntervalSeconds, no Entries.
+    private const string LegacyJson =
+        @"{
+            ""Schedule"": {
+                ""ActiveDays"": [""Monday"", ""Wednesday"", ""Friday""],
+                ""TimeWindows"": [
+                    { ""Start"": ""08:00:00"", ""End"": ""11:30:00"" },
+                    { ""Start"": ""13:30:00"", ""End"": ""17:00:00"" }
+                ],
+                ""IntervalSeconds"": 45
+            },
+            ""Camera"": { ""JpegQuality"": 70 },
+            ""AutoStartWithWindows"": false
+        }";
+
     [Fact]
     public void Load_returns_defaults_when_file_missing()
     {
@@ -32,12 +47,14 @@ public class ConfigStoreTests : IDisposable
 
         var config = store.Load();
 
-        Assert.Equal(30, config.Schedule.IntervalSeconds);
-        Assert.Equal(2, config.Schedule.TimeWindows.Length);
-        Assert.Equal(new TimeOnly(8, 0), config.Schedule.TimeWindows[0].Start);
-        Assert.Equal(new TimeOnly(11, 30), config.Schedule.TimeWindows[0].End);
-        Assert.Equal(new TimeOnly(13, 30), config.Schedule.TimeWindows[1].Start);
-        Assert.Equal(new TimeOnly(17, 0), config.Schedule.TimeWindows[1].End);
+        Assert.Equal(AppConfig.CurrentSchemaVersion, config.SchemaVersion);
+        Assert.Equal(2, config.Schedule.Entries.Length);
+        Assert.All(config.Schedule.Entries, e => Assert.Equal(ScheduleMode.Interval, e.Mode));
+        Assert.Equal(30, config.Schedule.Entries[0].IntervalSeconds);
+        Assert.Equal(new TimeOnly(8, 0), config.Schedule.Entries[0].Window.Start);
+        Assert.Equal(new TimeOnly(11, 30), config.Schedule.Entries[0].Window.End);
+        Assert.Equal(new TimeOnly(13, 30), config.Schedule.Entries[1].Window.Start);
+        Assert.Equal(new TimeOnly(17, 0), config.Schedule.Entries[1].Window.End);
         Assert.True(config.Camera.UseHighestResolution);
         Assert.True(config.AutoStartWithWindows);
         Assert.Equal(85, config.Camera.JpegQuality);
@@ -51,14 +68,27 @@ public class ConfigStoreTests : IDisposable
         {
             Schedule = new ScheduleConfig
             {
-                ActiveDays = new[] { DayOfWeek.Saturday, DayOfWeek.Sunday },
-                TimeWindows = new[]
+                Entries = new[]
                 {
-                    new TimeWindow(new TimeOnly(9, 30), new TimeOnly(12, 0)),
-                    new TimeWindow(new TimeOnly(13, 0), new TimeOnly(16, 45)),
-                    new TimeWindow(new TimeOnly(18, 30), new TimeOnly(21, 0)),
+                    new ScheduleEntry
+                    {
+                        Id = "weekend-am",
+                        Name = "周末上午",
+                        Mode = ScheduleMode.Interval,
+                        ActiveDays = new[] { DayOfWeek.Saturday, DayOfWeek.Sunday },
+                        Window = new TimeWindow(new TimeOnly(9, 30), new TimeOnly(12, 0)),
+                        IntervalSeconds = 15,
+                    },
+                    new ScheduleEntry
+                    {
+                        Id = "bell-times",
+                        Name = "打铃",
+                        Mode = ScheduleMode.SpecificTimes,
+                        Enabled = false,
+                        ActiveDays = new[] { DayOfWeek.Monday },
+                        Times = new[] { new TimeOnly(8, 0), new TimeOnly(9, 55), new TimeOnly(14, 0) },
+                    },
                 },
-                IntervalSeconds = 15,
             },
             Camera = new CameraConfig
             {
@@ -83,11 +113,21 @@ public class ConfigStoreTests : IDisposable
         store.Save(written);
         var read = store.Load();
 
-        Assert.Equal(15, read.Schedule.IntervalSeconds);
-        Assert.Equal(3, read.Schedule.TimeWindows.Length);
-        Assert.Equal(new TimeOnly(9, 30), read.Schedule.TimeWindows[0].Start);
-        Assert.Equal(new TimeOnly(21, 0), read.Schedule.TimeWindows[2].End);
-        Assert.Equal(new[] { DayOfWeek.Saturday, DayOfWeek.Sunday }, read.Schedule.ActiveDays);
+        Assert.Equal(2, read.Schedule.Entries.Length);
+
+        var am = read.Schedule.Entries[0];
+        Assert.Equal("weekend-am", am.Id);
+        Assert.Equal(ScheduleMode.Interval, am.Mode);
+        Assert.Equal(15, am.IntervalSeconds);
+        Assert.Equal(new TimeOnly(9, 30), am.Window.Start);
+        Assert.Equal(new TimeOnly(12, 0), am.Window.End);
+        Assert.Equal(new[] { DayOfWeek.Saturday, DayOfWeek.Sunday }, am.ActiveDays);
+
+        var bell = read.Schedule.Entries[1];
+        Assert.Equal(ScheduleMode.SpecificTimes, bell.Mode);
+        Assert.False(bell.Enabled);
+        Assert.Equal(new[] { new TimeOnly(8, 0), new TimeOnly(9, 55), new TimeOnly(14, 0) }, bell.Times);
+
         Assert.Equal("Test Cam", read.Camera.FriendlyName);
         Assert.False(read.Camera.UseHighestResolution);
         Assert.Equal(640, read.Camera.Width);
@@ -99,6 +139,55 @@ public class ConfigStoreTests : IDisposable
     }
 
     [Fact]
+    public void Load_migrates_legacy_schedule_to_entries()
+    {
+        File.WriteAllText(_tmpPath, LegacyJson);
+        var store = new ConfigStore(_tmpPath);
+
+        var config = store.Load();
+
+        Assert.Equal(2, config.Schedule.Entries.Length);
+
+        var e0 = config.Schedule.Entries[0];
+        Assert.Equal("legacy-0", e0.Id);
+        Assert.Equal(ScheduleMode.Interval, e0.Mode);
+        Assert.Equal(45, e0.IntervalSeconds);
+        Assert.Equal(new TimeOnly(8, 0), e0.Window.Start);
+        Assert.Equal(new TimeOnly(11, 30), e0.Window.End);
+        Assert.Equal(new[] { DayOfWeek.Monday, DayOfWeek.Wednesday, DayOfWeek.Friday }, e0.ActiveDays);
+
+        Assert.Equal("legacy-1", config.Schedule.Entries[1].Id);
+        Assert.Equal(new TimeOnly(13, 30), config.Schedule.Entries[1].Window.Start);
+        Assert.Equal(45, config.Schedule.Entries[1].IntervalSeconds);
+
+        // Non-schedule fields survive migration.
+        Assert.Equal(70, config.Camera.JpegQuality);
+        Assert.False(config.AutoStartWithWindows);
+    }
+
+    [Fact]
+    public void MigrateOnDiskIfNeeded_upgrades_file_and_is_idempotent()
+    {
+        File.WriteAllText(_tmpPath, LegacyJson);
+        var store = new ConfigStore(_tmpPath);
+
+        store.MigrateOnDiskIfNeeded();
+
+        string upgraded = File.ReadAllText(_tmpPath);
+        Assert.Contains("\"Entries\"", upgraded);
+        Assert.DoesNotContain("TimeWindows", upgraded);
+
+        // Deterministic ids → repeated loads and a repeated on-disk migration never churn ids.
+        var first = store.Load();
+        store.MigrateOnDiskIfNeeded(); // second pass is a no-op
+        var second = store.Load();
+
+        Assert.Equal("legacy-0", first.Schedule.Entries[0].Id);
+        Assert.Equal(first.Schedule.Entries[0].Id, second.Schedule.Entries[0].Id);
+        Assert.Equal(45, second.Schedule.Entries[0].IntervalSeconds);
+    }
+
+    [Fact]
     public void Load_with_corrupted_json_backs_up_and_returns_defaults()
     {
         File.WriteAllText(_tmpPath, "{ this is not valid json");
@@ -106,7 +195,7 @@ public class ConfigStoreTests : IDisposable
 
         var config = store.Load();
 
-        Assert.Equal(30, config.Schedule.IntervalSeconds);
+        Assert.Equal(2, config.Schedule.Entries.Length);
         Assert.False(File.Exists(_tmpPath));
 
         var dir = Path.GetDirectoryName(_tmpPath)!;
@@ -137,11 +226,22 @@ public class ConfigStoreTests : IDisposable
     public void Save_is_atomic_via_temp_then_rename()
     {
         var store = new ConfigStore(_tmpPath);
-        store.Save(new AppConfig { Schedule = new ScheduleConfig { IntervalSeconds = 60 } });
-        store.Save(new AppConfig { Schedule = new ScheduleConfig { IntervalSeconds = 90 } });
+        store.Save(ConfigWithInterval(60));
+        store.Save(ConfigWithInterval(90));
 
         // No leftover .tmp file
         Assert.False(File.Exists(_tmpPath + ".tmp"));
-        Assert.Equal(90, store.Load().Schedule.IntervalSeconds);
+        Assert.Equal(90, store.Load().Schedule.Entries[0].IntervalSeconds);
     }
+
+    private static AppConfig ConfigWithInterval(int seconds) => new()
+    {
+        Schedule = new ScheduleConfig
+        {
+            Entries = new[]
+            {
+                new ScheduleEntry { Id = "e", Mode = ScheduleMode.Interval, IntervalSeconds = seconds },
+            },
+        },
+    };
 }

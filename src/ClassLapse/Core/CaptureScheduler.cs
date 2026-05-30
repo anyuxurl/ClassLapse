@@ -13,7 +13,7 @@ public sealed class CaptureScheduler : IDisposable
     private readonly Func<DateTime> _clock;
     private readonly Timer _timer;
     private readonly SemaphoreSlim _tickGate = new(initialCount: 1, maxCount: 1);
-    private DateTime? _lastCaptureAt;
+    private readonly Dictionary<string, DateTime> _lastByEntryId = new();
     private volatile bool _disposed;
 
     public event Func<AppConfig, Task>? OnCaptureRequested;
@@ -25,8 +25,6 @@ public sealed class CaptureScheduler : IDisposable
         _clock = clock ?? (() => DateTime.Now);
         _timer = new Timer(TickCallback, state: null, Timeout.Infinite, Timeout.Infinite);
     }
-
-    public DateTime? LastCaptureAt => _lastCaptureAt;
 
     public void Start(TimeSpan? tickPeriod = null)
     {
@@ -69,16 +67,57 @@ public sealed class CaptureScheduler : IDisposable
     {
         var config = _configStore.Load();
         var now = _clock();
-        var reason = ScheduleDecision.Evaluate(now, _lastCaptureAt, config.Schedule, config.PausedUntil);
 
-        OnTickEvaluated?.Invoke(reason, config);
+        PruneStaleEntries(config.Schedule);
+        var eval = ScheduleDecision.Evaluate(now, config.Schedule, config.PausedUntil, _lastByEntryId);
 
-        if (reason != ScheduleDecision.Reason.ShouldCapture) return;
+        OnTickEvaluated?.Invoke(eval.Reason, config);
 
-        _lastCaptureAt = now;
+        if (eval.DueEntryIds.Length == 0) return;
+
+        // Stamp before the (slow) capture so a capture that overruns the next tick is not re-fired.
+        // Matches the old single-clock behaviour: a failed capture still consumes the interval slot.
+        StampDueEntries(config.Schedule, eval.DueEntryIds, now);
+
         var handler = OnCaptureRequested;
         if (handler == null) return;
 
         await handler.Invoke(config).ConfigureAwait(false);
+    }
+
+    /// <summary>Drop per-entry timing for entries that no longer exist (deleted/renamed via settings).</summary>
+    private void PruneStaleEntries(ScheduleConfig schedule)
+    {
+        if (_lastByEntryId.Count == 0) return;
+
+        var live = new HashSet<string>(schedule.Entries.Length);
+        foreach (var e in schedule.Entries) live.Add(e.Id);
+
+        List<string>? stale = null;
+        foreach (var key in _lastByEntryId.Keys)
+        {
+            if (!live.Contains(key)) (stale ??= new List<string>()).Add(key);
+        }
+        if (stale != null)
+        {
+            foreach (var k in stale) _lastByEntryId.Remove(k);
+        }
+    }
+
+    /// <summary>
+    /// Record each due entry's capture time. Interval entries store the wall clock; SpecificTimes
+    /// entries store the scheduled instant so the decision's dedup key matches on the next tick.
+    /// Non-due entries are deliberately left untouched — each entry's cadence is independent.
+    /// </summary>
+    private void StampDueEntries(ScheduleConfig schedule, string[] dueIds, DateTime now)
+    {
+        foreach (var id in dueIds)
+        {
+            var entry = Array.Find(schedule.Entries, e => e.Id == id);
+            if (entry is null) continue;
+            _lastByEntryId[id] = entry.Mode == ScheduleMode.SpecificTimes
+                ? (ScheduleDecision.FiringInstant(entry, now) ?? now)
+                : now;
+        }
     }
 }

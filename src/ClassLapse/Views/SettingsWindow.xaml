@@ -55,34 +55,18 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="12">
 
-                        <Label Content="生效星期"/>
-                        <UniformGrid Rows="1" Columns="7">
-                            <CheckBox x:Name="DayMon" Content="周一" Click="OnScheduleStructureChanged"/>
-                            <CheckBox x:Name="DayTue" Content="周二" Click="OnScheduleStructureChanged"/>
-                            <CheckBox x:Name="DayWed" Content="周三" Click="OnScheduleStructureChanged"/>
-                            <CheckBox x:Name="DayThu" Content="周四" Click="OnScheduleStructureChanged"/>
-                            <CheckBox x:Name="DayFri" Content="周五" Click="OnScheduleStructureChanged"/>
-                            <CheckBox x:Name="DaySat" Content="周六" Click="OnScheduleStructureChanged"/>
-                            <CheckBox x:Name="DaySun" Content="周日" Click="OnScheduleStructureChanged"/>
-                        </UniformGrid>
-
-                        <Label Content="拍照时段（每段都是 [Start, End)，中间空档自动不拍）"/>
-                        <StackPanel x:Name="TimeWindowsPanel"/>
-                        <Button x:Name="AddWindowButton" Content="+ 添加时段" Width="120" HorizontalAlignment="Left"
-                                Margin="0,6,0,0" Click="OnAddTimeWindowClick"/>
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="典型用法：上午 08:00-11:30、下午 13:30-17:00。学生午饭/放学时段不会拍空教室。"/>
+                                   Text="每个条目独立配置：模式（间隔/定时）、生效星期、时段或时间点。条目之间允许时间重叠。"/>
 
-                        <Label Content="拍照间隔（秒）"/>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBox x:Name="IntervalBox" Width="80" TextChanged="OnScheduleChanged"/>
-                            <TextBlock Text="   秒/张" VerticalAlignment="Center" Foreground="#888"/>
-                        </StackPanel>
+                        <StackPanel x:Name="EntriesPanel" Margin="0,4,0,0"/>
+
+                        <Button x:Name="AddEntryButton" Content="+ 添加条目" Width="120" HorizontalAlignment="Left"
+                                Margin="0,10,0,0" Click="OnAddEntryClick"/>
 
                         <Border Margin="0,18,0,0" Padding="12" Background="#F5F8FA" CornerRadius="4">
                             <StackPanel>
                                 <TextBlock Text="预计拍摄量" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="EstimateText" Margin="0,4,0,0" Foreground="#444"/>
+                                <TextBlock x:Name="EstimateText" Margin="0,4,0,0" Foreground="#444" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
 

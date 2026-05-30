@@ -24,6 +24,7 @@ public partial class App : Application
         Log.Info($"ClassLapse starting (PID {Environment.ProcessId})");
 
         var configStore = new ConfigStore();
+        configStore.MigrateOnDiskIfNeeded();
         var cameraService = new CameraService();
         var config = configStore.Load();
 

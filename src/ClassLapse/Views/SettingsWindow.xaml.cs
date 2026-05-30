@@ -17,13 +17,22 @@ public partial class SettingsWindow : Window
     private static readonly string[] CircledNumbers =
         { "①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩" };
 
+    private static readonly string[] DayNames =
+        { "周一", "周二", "周三", "周四", "周五", "周六", "周日" };
+
+    private static readonly DayOfWeek[] DayOrder =
+    {
+        DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday,
+        DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday,
+    };
+
     private readonly ConfigStore _configStore;
     private readonly CameraService _cameraService;
     private readonly bool _isFirstRun;
     private AppConfig _config;
     private bool _loaded;
 
-    private readonly List<TimeWindowRow> _windowRows = new();
+    private readonly List<EntryCard> _entryCards = new();
 
     public SettingsWindow(ConfigStore configStore, CameraService cameraService, bool isFirstRun = false)
     {
@@ -58,29 +67,16 @@ public partial class SettingsWindow : Window
 
     private void PopulateFromConfig(AppConfig config)
     {
-        DayMon.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Monday);
-        DayTue.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Tuesday);
-        DayWed.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Wednesday);
-        DayThu.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Thursday);
-        DayFri.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Friday);
-        DaySat.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Saturday);
-        DaySun.IsChecked = config.Schedule.ActiveDays.Contains(DayOfWeek.Sunday);
-
-        TimeWindowsPanel.Children.Clear();
-        _windowRows.Clear();
-        if (config.Schedule.TimeWindows.Length == 0)
+        EntriesPanel.Children.Clear();
+        _entryCards.Clear();
+        if (config.Schedule.Entries.Length == 0)
         {
-            AddTimeWindowRow(new TimeOnly(8, 0), new TimeOnly(17, 0));
+            AddEntryCard(NewDefaultEntry());
         }
         else
         {
-            foreach (var w in config.Schedule.TimeWindows)
-            {
-                AddTimeWindowRow(w.Start, w.End);
-            }
+            foreach (var entry in config.Schedule.Entries) AddEntryCard(entry);
         }
-
-        IntervalBox.Text = config.Schedule.IntervalSeconds.ToString();
 
         HighestResCheck.IsChecked = config.Camera.UseHighestResolution;
         WidthBox.Text = config.Camera.Width.ToString();
@@ -131,122 +127,228 @@ public partial class SettingsWindow : Window
         PopulateCameras(currentMoniker);
     }
 
-    // ----- time windows dynamic rows -----
+    // ----- schedule entry cards -----
 
-    private sealed class TimeWindowRow
+    private sealed class EntryCard
     {
-        public Border Container { get; }
-        public TextBox StartBox { get; }
-        public TextBox EndBox { get; }
-        public TextBlock IndexText { get; }
+        public string Id = "";
+        public Border Container = null!;
+        public TextBlock IndexText = null!;
+        public CheckBox EnabledCheck = null!;
+        public TextBox NameBox = null!;
+        public ComboBox ModeCombo = null!;
+        public CheckBox[] DayChecks = null!; // index 0=Mon .. 6=Sun, aligned with DayOrder
+        public Panel IntervalPanel = null!;
+        public TextBox StartBox = null!;
+        public TextBox EndBox = null!;
+        public TextBox IntervalBox = null!;
+        public Panel SpecificPanel = null!;
+        public TextBox TimesBox = null!;
 
-        public TimeWindowRow(Border container, TextBox start, TextBox end, TextBlock indexText)
-        {
-            Container = container;
-            StartBox = start;
-            EndBox = end;
-            IndexText = indexText;
-        }
+        public bool IsSpecific => ModeCombo.SelectedIndex == 1;
     }
 
-    private void AddTimeWindowRow(TimeOnly start, TimeOnly end)
+    private static ScheduleEntry NewDefaultEntry() => new()
     {
-        var grid = new Grid { Margin = new Thickness(0, 4, 0, 0) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+        Id = Guid.NewGuid().ToString("N"),
+        Mode = ScheduleMode.Interval,
+        Window = new TimeWindow(new TimeOnly(8, 0), new TimeOnly(11, 30)),
+        IntervalSeconds = 30,
+    };
 
-        var indexText = new TextBlock
+    private void AddEntryCard(ScheduleEntry entry)
+    {
+        var card = new EntryCard
+        {
+            Id = string.IsNullOrEmpty(entry.Id) ? Guid.NewGuid().ToString("N") : entry.Id,
+        };
+
+        var outer = new StackPanel();
+
+        // --- header: index | 启用 | name | mode | delete ---
+        var header = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        card.IndexText = new TextBlock
         {
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
             Foreground = Brushes.DimGray,
             FontSize = 14,
         };
-        Grid.SetColumn(indexText, 0);
-        grid.Children.Add(indexText);
+        Grid.SetColumn(card.IndexText, 0);
+        header.Children.Add(card.IndexText);
 
-        var startBox = new TextBox
+        card.EnabledCheck = new CheckBox
         {
-            Text = start.ToString("HH:mm"),
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Padding = new Thickness(4, 3, 4, 3),
-        };
-        startBox.TextChanged += OnScheduleChanged;
-        Grid.SetColumn(startBox, 1);
-        grid.Children.Add(startBox);
-
-        var toLabel = new TextBlock
-        {
-            Text = "至",
-            HorizontalAlignment = HorizontalAlignment.Center,
+            Content = "启用",
+            IsChecked = entry.Enabled,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Brushes.DimGray,
+            Margin = new Thickness(0, 0, 8, 0),
         };
-        Grid.SetColumn(toLabel, 2);
-        grid.Children.Add(toLabel);
+        card.EnabledCheck.Click += OnScheduleStructureChanged;
+        Grid.SetColumn(card.EnabledCheck, 1);
+        header.Children.Add(card.EnabledCheck);
 
-        var endBox = new TextBox
+        card.NameBox = new TextBox
         {
-            Text = end.ToString("HH:mm"),
+            Text = entry.Name,
+            ToolTip = "条目名称（可选，如 上午 / 打铃）",
             VerticalContentAlignment = VerticalAlignment.Center,
             Padding = new Thickness(4, 3, 4, 3),
+            MinWidth = 120,
         };
-        endBox.TextChanged += OnScheduleChanged;
-        Grid.SetColumn(endBox, 3);
-        grid.Children.Add(endBox);
+        Grid.SetColumn(card.NameBox, 2);
+        header.Children.Add(card.NameBox);
+
+        card.ModeCombo = new ComboBox
+        {
+            Width = 88,
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        card.ModeCombo.Items.Add("间隔");
+        card.ModeCombo.Items.Add("定时");
+        card.ModeCombo.SelectedIndex = entry.Mode == ScheduleMode.SpecificTimes ? 1 : 0;
+        Grid.SetColumn(card.ModeCombo, 3);
+        header.Children.Add(card.ModeCombo);
 
         var deleteBtn = new Button
         {
             Content = "删除",
-            Padding = new Thickness(4, 1, 4, 1),
+            Padding = new Thickness(8, 1, 8, 1),
+            Margin = new Thickness(8, 0, 0, 0),
         };
-        Grid.SetColumn(deleteBtn, 5);
-        grid.Children.Add(deleteBtn);
+        Grid.SetColumn(deleteBtn, 4);
+        header.Children.Add(deleteBtn);
 
-        var border = new Border { Child = grid };
-        var row = new TimeWindowRow(border, startBox, endBox, indexText);
+        outer.Children.Add(header);
+
+        // --- days ---
+        var days = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
+        card.DayChecks = new CheckBox[7];
+        for (int i = 0; i < 7; i++)
+        {
+            var c = new CheckBox
+            {
+                Content = DayNames[i],
+                IsChecked = entry.ActiveDays.Contains(DayOrder[i]),
+                Margin = new Thickness(0, 0, 10, 0),
+            };
+            c.Click += OnScheduleStructureChanged;
+            card.DayChecks[i] = c;
+            days.Children.Add(c);
+        }
+        outer.Children.Add(days);
+
+        // --- interval sub-panel ---
+        var ip = new StackPanel { Orientation = Orientation.Horizontal };
+        ip.Children.Add(new TextBlock { Text = "时段 ", VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.DimGray });
+        card.StartBox = MakeTimeBox(entry.Window.Start);
+        ip.Children.Add(card.StartBox);
+        ip.Children.Add(new TextBlock { Text = " 至 ", VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.DimGray });
+        card.EndBox = MakeTimeBox(entry.Window.End);
+        ip.Children.Add(card.EndBox);
+        ip.Children.Add(new TextBlock { Text = "     每 ", VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.DimGray });
+        card.IntervalBox = new TextBox
+        {
+            Text = entry.IntervalSeconds.ToString(),
+            Width = 56,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(4, 3, 4, 3),
+        };
+        card.IntervalBox.TextChanged += OnScheduleChanged;
+        ip.Children.Add(card.IntervalBox);
+        ip.Children.Add(new TextBlock { Text = " 秒/张", VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.DimGray });
+        card.IntervalPanel = ip;
+        outer.Children.Add(ip);
+
+        // --- specific-times sub-panel ---
+        var sp = new StackPanel { Orientation = Orientation.Horizontal };
+        sp.Children.Add(new TextBlock { Text = "时间点 ", VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.DimGray });
+        card.TimesBox = new TextBox
+        {
+            Text = string.Join(", ", entry.Times.Select(t => t.ToString("HH:mm"))),
+            Width = 300,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(4, 3, 4, 3),
+        };
+        card.TimesBox.TextChanged += OnScheduleChanged;
+        sp.Children.Add(card.TimesBox);
+        sp.Children.Add(new TextBlock { Text = "  HH:mm，逗号分隔", VerticalAlignment = VerticalAlignment.Center, Foreground = Brushes.Gray });
+        card.SpecificPanel = sp;
+        outer.Children.Add(sp);
+
+        card.Container = new Border
+        {
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xDD, 0xDD, 0xDD)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(10),
+            Margin = new Thickness(0, 6, 0, 0),
+            Child = outer,
+        };
+
         deleteBtn.Click += (_, _) =>
         {
-            _windowRows.Remove(row);
-            TimeWindowsPanel.Children.Remove(border);
-            RefreshWindowRowIndices();
+            _entryCards.Remove(card);
+            EntriesPanel.Children.Remove(card.Container);
+            RefreshEntryCardIndices();
             UpdateEstimate();
         };
 
-        _windowRows.Add(row);
-        TimeWindowsPanel.Children.Add(border);
-        RefreshWindowRowIndices();
+        card.ModeCombo.SelectionChanged += (_, _) =>
+        {
+            ApplyCardMode(card);
+            // A mode flip changes what the per-entry last-capture means, so mint a fresh id to
+            // stop the scheduler's stale timing for the old id from mis-deduping the new mode.
+            card.Id = Guid.NewGuid().ToString("N");
+            UpdateEstimate();
+        };
+
+        ApplyCardMode(card); // initial sub-panel visibility (handler not yet wired during construction)
+
+        _entryCards.Add(card);
+        EntriesPanel.Children.Add(card.Container);
+        RefreshEntryCardIndices();
     }
 
-    private void RefreshWindowRowIndices()
+    private TextBox MakeTimeBox(TimeOnly t)
     {
-        for (int i = 0; i < _windowRows.Count; i++)
+        var box = new TextBox
         {
-            _windowRows[i].IndexText.Text = i < CircledNumbers.Length
+            Text = t.ToString("HH:mm"),
+            Width = 64,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(4, 3, 4, 3),
+        };
+        box.TextChanged += OnScheduleChanged;
+        return box;
+    }
+
+    private static void ApplyCardMode(EntryCard card)
+    {
+        bool specific = card.IsSpecific;
+        card.IntervalPanel.Visibility = specific ? Visibility.Collapsed : Visibility.Visible;
+        card.SpecificPanel.Visibility = specific ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void RefreshEntryCardIndices()
+    {
+        for (int i = 0; i < _entryCards.Count; i++)
+        {
+            _entryCards[i].IndexText.Text = i < CircledNumbers.Length
                 ? CircledNumbers[i]
                 : (i + 1).ToString();
         }
     }
 
-    private void OnAddTimeWindowClick(object sender, RoutedEventArgs e)
+    private void OnAddEntryClick(object sender, RoutedEventArgs e)
     {
-        TimeOnly defaultStart = new(8, 0);
-        TimeOnly defaultEnd = new(11, 30);
-        if (_windowRows.Count > 0)
-        {
-            // Default to "right after the last window ends"
-            if (TimeOnly.TryParseExact(_windowRows[^1].EndBox.Text, "HH:mm", out var prevEnd))
-            {
-                defaultStart = prevEnd;
-                defaultEnd = TimeOnly.FromTimeSpan(prevEnd.ToTimeSpan().Add(TimeSpan.FromHours(2)));
-                if (defaultEnd < defaultStart) defaultEnd = new TimeOnly(23, 59);
-            }
-        }
-        AddTimeWindowRow(defaultStart, defaultEnd);
+        AddEntryCard(NewDefaultEntry());
         UpdateEstimate();
     }
 
@@ -259,103 +361,183 @@ public partial class SettingsWindow : Window
     {
         if (!_loaded) return;
 
-        if (!int.TryParse(IntervalBox.Text, out var interval) || interval < 1)
+        if (_entryCards.Count == 0)
         {
-            EstimateText.Text = "（请填写有效的拍照间隔）";
+            EstimateText.Text = "（至少添加一个条目）";
             return;
         }
 
-        if (!TryCollectTimeWindows(out var windows, out string? winErr))
+        int totalPerWeek = 0;
+        var lines = new List<string>();
+        foreach (var card in _entryCards)
         {
-            EstimateText.Text = "（时段配置错误：" + winErr + "）";
+            if (card.EnabledCheck.IsChecked != true) continue;
+
+            int dayCount = CountDays(card);
+            if (dayCount == 0)
+            {
+                lines.Add($"{CardLabel(card)}：未勾选生效日");
+                continue;
+            }
+
+            if (!card.IsSpecific)
+            {
+                if (!TimeOnly.TryParseExact(card.StartBox.Text.Trim(), "HH:mm", out var s) ||
+                    !TimeOnly.TryParseExact(card.EndBox.Text.Trim(), "HH:mm", out var en) ||
+                    en <= s ||
+                    !int.TryParse(card.IntervalBox.Text, out var interval) || interval < 1)
+                {
+                    lines.Add($"{CardLabel(card)}：时段/间隔无效");
+                    continue;
+                }
+                double seconds = (en.ToTimeSpan() - s.ToTimeSpan()).TotalSeconds;
+                int perDay = (int)Math.Floor(seconds / interval) + 1;
+                totalPerWeek += perDay * dayCount;
+                lines.Add($"{CardLabel(card)}：{s:HH:mm}-{en:HH:mm} 每 {interval}s ≈ {perDay} 张/天 × {dayCount} 天");
+            }
+            else
+            {
+                if (!TryParseTimes(card.TimesBox.Text, out var times) || times.Length == 0)
+                {
+                    lines.Add($"{CardLabel(card)}：时间点无效");
+                    continue;
+                }
+                totalPerWeek += times.Length * dayCount;
+                lines.Add($"{CardLabel(card)}：{times.Length} 个时间点 × {dayCount} 天");
+            }
+        }
+
+        if (lines.Count == 0)
+        {
+            EstimateText.Text = "（没有启用的条目）";
             return;
         }
 
-        int dayCount = CollectActiveDays().Length;
-        if (dayCount == 0)
-        {
-            EstimateText.Text = "（至少要勾选一个生效日）";
-            return;
-        }
-
-        double totalSecondsPerDay = 0;
-        var windowParts = new List<string>();
-        foreach (var w in windows)
-        {
-            double seconds = (w.End.ToTimeSpan() - w.Start.ToTimeSpan()).TotalSeconds;
-            totalSecondsPerDay += seconds;
-            windowParts.Add($"{w.Start:HH:mm}-{w.End:HH:mm} ({seconds / 60:N0} 分)");
-        }
-
-        int perDay = (int)Math.Floor(totalSecondsPerDay / interval) + windows.Length;
-        int perWeek = perDay * dayCount;
-        var approxMb = perDay * 800.0 / 1024.0; // assume ~800KB/jpg at full res
-
-        EstimateText.Text =
-            $"每个生效日 {windows.Length} 段（{string.Join("，", windowParts)}）共 {totalSecondsPerDay / 60:N0} 分钟" +
-            $"\n约 {perDay:N0} 张/天，{perWeek:N0} 张/周（按全分辨率 ~800KB 估算，约 {approxMb:N1} MB/天）";
+        double mbPerWeek = totalPerWeek * 800.0 / 1024.0; // assume ~800KB/jpg at full res
+        EstimateText.Text = string.Join("\n", lines) +
+            $"\n合计约 {totalPerWeek:N0} 张/周（全分辨率 ~800KB 估算，约 {mbPerWeek:N0} MB/周）";
     }
 
-    private DayOfWeek[] CollectActiveDays()
+    private static string CardLabel(EntryCard card)
+    {
+        var name = card.NameBox.Text.Trim();
+        return string.IsNullOrEmpty(name) ? (card.IsSpecific ? "定时条目" : "间隔条目") : name;
+    }
+
+    private static int CountDays(EntryCard card)
+    {
+        int n = 0;
+        foreach (var c in card.DayChecks)
+        {
+            if (c.IsChecked == true) n++;
+        }
+        return n;
+    }
+
+    private static DayOfWeek[] CollectDays(EntryCard card)
     {
         var list = new List<DayOfWeek>(7);
-        if (DayMon.IsChecked == true) list.Add(DayOfWeek.Monday);
-        if (DayTue.IsChecked == true) list.Add(DayOfWeek.Tuesday);
-        if (DayWed.IsChecked == true) list.Add(DayOfWeek.Wednesday);
-        if (DayThu.IsChecked == true) list.Add(DayOfWeek.Thursday);
-        if (DayFri.IsChecked == true) list.Add(DayOfWeek.Friday);
-        if (DaySat.IsChecked == true) list.Add(DayOfWeek.Saturday);
-        if (DaySun.IsChecked == true) list.Add(DayOfWeek.Sunday);
+        for (int i = 0; i < 7; i++)
+        {
+            if (card.DayChecks[i].IsChecked == true) list.Add(DayOrder[i]);
+        }
         return list.ToArray();
     }
 
-    private bool TryCollectTimeWindows(out TimeWindow[] windows, out string? error)
+    private static bool TryParseTimes(string text, out TimeOnly[] times)
     {
-        windows = Array.Empty<TimeWindow>();
+        times = Array.Empty<TimeOnly>();
+        var parts = text.Split(
+            new[] { ',', '，', ' ', '\t', ';', '；' },
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var list = new List<TimeOnly>(parts.Length);
+        foreach (var p in parts)
+        {
+            if (!TimeOnly.TryParseExact(p, "HH:mm", out var t)) return false;
+            list.Add(t);
+        }
+        times = list.ToArray();
+        return true;
+    }
+
+    private bool TryCollectEntries(out ScheduleEntry[] entries, out string? error)
+    {
+        entries = Array.Empty<ScheduleEntry>();
         error = null;
 
-        if (_windowRows.Count == 0)
+        if (_entryCards.Count == 0)
         {
-            error = "至少要保留一个时段";
+            error = "至少要添加一个拍照条目";
             return false;
         }
 
-        var list = new List<TimeWindow>(_windowRows.Count);
-        for (int i = 0; i < _windowRows.Count; i++)
+        var list = new List<ScheduleEntry>(_entryCards.Count);
+        for (int i = 0; i < _entryCards.Count; i++)
         {
-            var row = _windowRows[i];
-            string startText = row.StartBox.Text.Trim();
-            string endText = row.EndBox.Text.Trim();
-            if (!TimeOnly.TryParseExact(startText, "HH:mm", out var s))
+            var card = _entryCards[i];
+            bool enabled = card.EnabledCheck.IsChecked == true;
+            var days = CollectDays(card);
+            if (enabled && days.Length == 0)
             {
-                error = $"时段 {i + 1} 的起始时间 '{startText}' 格式应为 HH:mm";
+                error = $"条目 {i + 1} 已启用，但没有勾选任何生效日";
                 return false;
             }
-            if (!TimeOnly.TryParseExact(endText, "HH:mm", out var endVal))
+
+            var entry = new ScheduleEntry
             {
-                error = $"时段 {i + 1} 的结束时间 '{endText}' 格式应为 HH:mm";
-                return false;
-            }
-            if (endVal <= s)
+                Id = string.IsNullOrEmpty(card.Id) ? Guid.NewGuid().ToString("N") : card.Id,
+                Enabled = enabled,
+                Name = card.NameBox.Text.Trim(),
+                ActiveDays = days,
+            };
+
+            if (!card.IsSpecific)
             {
-                error = $"时段 {i + 1} 的结束时间必须晚于起始时间";
-                return false;
+                entry.Mode = ScheduleMode.Interval;
+                if (!TimeOnly.TryParseExact(card.StartBox.Text.Trim(), "HH:mm", out var s))
+                {
+                    error = $"条目 {i + 1} 的开始时间格式应为 HH:mm";
+                    return false;
+                }
+                if (!TimeOnly.TryParseExact(card.EndBox.Text.Trim(), "HH:mm", out var en))
+                {
+                    error = $"条目 {i + 1} 的结束时间格式应为 HH:mm";
+                    return false;
+                }
+                if (en <= s)
+                {
+                    error = $"条目 {i + 1} 的结束时间必须晚于开始时间";
+                    return false;
+                }
+                if (!int.TryParse(card.IntervalBox.Text, out var interval) || interval < 1)
+                {
+                    error = $"条目 {i + 1} 的拍照间隔必须是 ≥ 1 的整数";
+                    return false;
+                }
+                entry.Window = new TimeWindow(s, en);
+                entry.IntervalSeconds = interval;
             }
-            list.Add(new TimeWindow(s, endVal));
+            else
+            {
+                entry.Mode = ScheduleMode.SpecificTimes;
+                if (!TryParseTimes(card.TimesBox.Text, out var times))
+                {
+                    error = $"条目 {i + 1} 的时间点格式应为 HH:mm（逗号分隔）";
+                    return false;
+                }
+                if (times.Length == 0)
+                {
+                    error = $"条目 {i + 1} 至少要有一个时间点";
+                    return false;
+                }
+                entry.Times = times.Distinct().OrderBy(t => t).ToArray();
+            }
+
+            list.Add(entry);
         }
 
-        // sort + 简单重叠检测
-        var sorted = list.OrderBy(w => w.Start).ToList();
-        for (int i = 1; i < sorted.Count; i++)
-        {
-            if (sorted[i].Start < sorted[i - 1].End)
-            {
-                error = $"时段 {sorted[i - 1].Start:HH:mm}-{sorted[i - 1].End:HH:mm} 与 {sorted[i].Start:HH:mm}-{sorted[i].End:HH:mm} 重叠";
-                return false;
-            }
-        }
-
-        windows = sorted.ToArray();
+        entries = list.ToArray();
         return true;
     }
 
@@ -554,22 +736,9 @@ public partial class SettingsWindow : Window
         built = new AppConfig();
         error = null;
 
-        var days = CollectActiveDays();
-        if (days.Length == 0)
+        if (!TryCollectEntries(out var entries, out string? scheduleError))
         {
-            error = "至少要勾选一个生效日";
-            return false;
-        }
-
-        if (!TryCollectTimeWindows(out var windows, out string? winError))
-        {
-            error = winError;
-            return false;
-        }
-
-        if (!int.TryParse(IntervalBox.Text, out int interval) || interval < 1)
-        {
-            error = "拍照间隔必须是大于等于 1 的整数";
+            error = scheduleError;
             return false;
         }
 
@@ -640,9 +809,7 @@ public partial class SettingsWindow : Window
         {
             Schedule = new ScheduleConfig
             {
-                ActiveDays = days,
-                TimeWindows = windows,
-                IntervalSeconds = interval,
+                Entries = entries,
             },
             Camera = new CameraConfig
             {

@@ -8,7 +8,7 @@
 - **极低占用**——闲置 CPU 0%、内存 < 60 MB
 - **可选摄像头**——避开展台等老师上课会调用的设备
 - **被占用即让**——目标摄像头被希沃主软件抢走时静默跳过 + 写日志，绝不抢设备
-- **多段时间窗口**——上午/下午/晚自习等多个时段独立配置，午饭/放学间隔自动不拍空教室
+- **按条目的计划**——每个条目独立配置：间隔模式（时段内每 N 秒）/ 定时模式（在指定时刻各拍一张）、生效星期、时段或时间点；上午/下午/晚自习、打铃/升旗时刻都能表达，条目之间允许重叠
 - **首次运行向导**——开箱即用，引导选摄像头/路径/计划
 - **开机自启**——HKCU 注册表，无需管理员权限
 - **自动清理**——可选按保留天数 + 磁盘上限滚动删旧
@@ -50,7 +50,7 @@
 
 ```powershell
 dotnet build -c Release
-dotnet test                   # 期望 20 个 pass (15 schedule + 5 config)
+dotnet test                   # 期望 42 个 pass (30 schedule + 7 config + 5 migration)
 ```
 
 ### 发布
@@ -75,18 +75,19 @@ ClassLapse/
 │   │   ├── App.xaml(.cs)             # 入口：CLI 模式 / 首次运行向导 / 正常托盘启动
 │   │   ├── TrayApp.cs                # H.NotifyIcon 托盘 + Scheduler 订阅 + 拍照写盘
 │   │   ├── Core/
-│   │   │   ├── CaptureScheduler.cs   # System.Threading.Timer，1s 节拍 + 重入锁
-│   │   │   ├── ScheduleDecision.cs   # 纯函数：(now, last, schedule, paused) -> Reason
+│   │   │   ├── CaptureScheduler.cs   # System.Threading.Timer，1s 节拍 + 重入锁 + 每条目计时
+│   │   │   ├── ScheduleDecision.cs   # 纯函数：(now, schedule, paused, lastByEntry) -> 哪些条目该拍
+│   │   │   ├── LegacyScheduleMigration.cs # 旧全局计划 → 条目列表（确定性 id，幂等）
 │   │   │   ├── CameraEnumerator.cs   # DirectShow VideoInputDevice 枚举
 │   │   │   ├── CameraService.cs      # 异步 TryCaptureAsync，立即释放设备
-│   │   │   ├── ConfigStore.cs        # JSON 读写 + 原子 .tmp+Replace + 损坏自愈
+│   │   │   ├── ConfigStore.cs        # JSON 读写 + 原子 .tmp+Replace + 损坏自愈 + 启动迁移
 │   │   │   ├── AutoStartManager.cs   # HKCU\Run\ClassLapse
 │   │   │   ├── StorageJanitor.cs     # 按天数+磁盘上限滚动清理
 │   │   │   ├── Logger.cs             # 按天滚动文本日志
 │   │   │   └── DevCli.cs             # --list-cameras / --capture <idx> <out>
-│   │   ├── Models/                   # AppConfig / ScheduleConfig / TimeWindow ...
+│   │   ├── Models/                   # AppConfig / ScheduleConfig / ScheduleEntry / TimeWindow ...
 │   │   └── Views/SettingsWindow      # 4 Tab 设置 + 首次运行双用
-│   └── ClassLapse.Tests/             # xUnit (ScheduleDecisionTests / ConfigStoreTests)
+│   └── ClassLapse.Tests/             # xUnit (ScheduleDecision / ConfigStore / LegacyScheduleMigration)
 └── .gitignore
 ```
 
