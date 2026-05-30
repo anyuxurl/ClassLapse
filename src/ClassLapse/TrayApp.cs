@@ -33,6 +33,7 @@ public sealed class TrayApp : IDisposable
     private MenuItem? _todayItem;
     private MenuItem? _cameraItem;
     private SettingsWindow? _settingsWindow;
+    private TimelapseWindow? _timelapseWindow;
 
     public TrayApp(ConfigStore configStore, CameraService cameraService, CaptureScheduler scheduler)
     {
@@ -120,6 +121,10 @@ public sealed class TrayApp : IDisposable
         var openFolder = new MenuItem { Header = "📂  打开输出文件夹" };
         openFolder.Click += (_, _) => OpenOutputFolder();
         menu.Items.Add(openFolder);
+
+        var timelapse = new MenuItem { Header = "🎬  合成延时视频..." };
+        timelapse.Click += (_, _) => OpenTimelapse();
+        menu.Items.Add(timelapse);
 
         var settings = new MenuItem { Header = "⚙️  设置..." };
         settings.Click += (_, _) => OpenSettings();
@@ -348,5 +353,26 @@ public sealed class TrayApp : IDisposable
         _settingsWindow = new SettingsWindow(_configStore, _cameraService);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
+    }
+
+    private void OpenTimelapse()
+    {
+        if (_timelapseWindow != null)
+        {
+            _timelapseWindow.Activate();
+            return;
+        }
+
+        var folder = _configStore.Load().Storage.OutputFolder;
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            MessageBox.Show("输出文件夹尚未配置或不存在，暂无照片可合成。", "ClassLapse",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        _timelapseWindow = new TimelapseWindow(_configStore);
+        _timelapseWindow.Closed += (_, _) => _timelapseWindow = null;
+        _timelapseWindow.Show();
     }
 }

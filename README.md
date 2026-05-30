@@ -13,6 +13,7 @@
 - **开机自启**——HKCU 注册表，无需管理员权限
 - **自动清理**——可选按保留天数 + 磁盘上限滚动删旧
 - **设备最高分辨率**——默认按摄像头能输出的最高分辨率拍摄
+- **一键合成延时视频**——托盘里选若干天（可整学期）后台合成 mp4，不打断拍照（需机器上有 ffmpeg）
 
 ## 截图
 
@@ -50,7 +51,7 @@
 
 ```powershell
 dotnet build -c Release
-dotnet test                   # 期望 42 个 pass (30 schedule + 7 config + 5 migration)
+dotnet test                   # 期望 60 个 pass (30 schedule + 7 config + 5 migration + 18 timelapse)
 ```
 
 ### 发布
@@ -78,6 +79,10 @@ ClassLapse/
 │   │   │   ├── CaptureScheduler.cs   # System.Threading.Timer，1s 节拍 + 重入锁 + 每条目计时
 │   │   │   ├── ScheduleDecision.cs   # 纯函数：(now, schedule, paused, lastByEntry) -> 哪些条目该拍
 │   │   │   ├── LegacyScheduleMigration.cs # 旧全局计划 → 条目列表（确定性 id，幂等）
+│   │   │   ├── CaptureLibrary.cs      # 枚举 yyyy-MM-dd 日期 + 按时序收集帧（合成用）
+│   │   │   ├── FfmpegLocator.cs       # 探测 ffmpeg：配置路径 / exe 同目录 / PATH
+│   │   │   ├── FfmpegCommand.cs       # 纯函数：ffconcat 列表 + ffmpeg argv 构造
+│   │   │   ├── TimelapseComposer.cs   # 跑 ffmpeg 合成 mp4，进度/取消/兜底
 │   │   │   ├── CameraEnumerator.cs   # DirectShow VideoInputDevice 枚举
 │   │   │   ├── CameraService.cs      # 异步 TryCaptureAsync，立即释放设备
 │   │   │   ├── ConfigStore.cs        # JSON 读写 + 原子 .tmp+Replace + 损坏自愈 + 启动迁移
@@ -85,9 +90,9 @@ ClassLapse/
 │   │   │   ├── StorageJanitor.cs     # 按天数+磁盘上限滚动清理
 │   │   │   ├── Logger.cs             # 按天滚动文本日志
 │   │   │   └── DevCli.cs             # --list-cameras / --capture <idx> <out>
-│   │   ├── Models/                   # AppConfig / ScheduleConfig / ScheduleEntry / TimeWindow ...
-│   │   └── Views/SettingsWindow      # 4 Tab 设置 + 首次运行双用
-│   └── ClassLapse.Tests/             # xUnit (ScheduleDecision / ConfigStore / LegacyScheduleMigration)
+│   │   ├── Models/                   # AppConfig / ScheduleConfig / ScheduleEntry / TimelapseConfig ...
+│   │   └── Views/                    # SettingsWindow（4 Tab）+ TimelapseWindow（合成延时）
+│   └── ClassLapse.Tests/             # xUnit (Schedule / Config / Migration / Ffmpeg* / CaptureLibrary)
 └── .gitignore
 ```
 
@@ -110,9 +115,11 @@ ClassLapse.exe --help
 
 > 从 PowerShell 跑看不到输出时用 `.\ClassLapse.exe --list-cameras | Out-Default`，或 `dotnet run --project src/ClassLapse -- --list-cameras`。
 
-## 后期合成延时视频
+## 合成延时视频
 
-输出目录下任一日期文件夹（例如 `2026-05-17/`）：
+**内置（推荐）**：托盘菜单 → **🎬 合成延时视频...** → 勾选要合成的日期（可多选，跨天/整学期按时间顺序拼接）→ 选帧率 / 分辨率 → 开始。需要机器上有 **ffmpeg**：把 `ffmpeg.exe` 放到 `ClassLapse.exe` 同目录、加进系统 PATH，或在对话框里手动指定。合成在后台进行，**不打断拍照**。详见 [docs/deployment.md](docs/deployment.md)。
+
+**手动（高级 / 备选）**：输出目录下任一日期文件夹（例如 `2026-05-17/`）：
 
 ```bash
 ffmpeg -framerate 30 -pattern_type glob -i '*.jpg' \
