@@ -33,6 +33,7 @@ public sealed class TrayApp : IDisposable
     private MenuItem? _todayItem;
     private MenuItem? _cameraItem;
     private SettingsWindow? _settingsWindow;
+    private TimelapseWindow? _timelapseWindow;
 
     public TrayApp(ConfigStore configStore, CameraService cameraService, CaptureScheduler scheduler)
     {
@@ -120,6 +121,10 @@ public sealed class TrayApp : IDisposable
         var openFolder = new MenuItem { Header = "📂  打开输出文件夹" };
         openFolder.Click += (_, _) => OpenOutputFolder();
         menu.Items.Add(openFolder);
+
+        var timelapse = new MenuItem { Header = "🎬  合成延时视频..." };
+        timelapse.Click += (_, _) => OpenTimelapse();
+        menu.Items.Add(timelapse);
 
         var settings = new MenuItem { Header = "⚙️  设置..." };
         settings.Click += (_, _) => OpenSettings();
@@ -235,12 +240,20 @@ public sealed class TrayApp : IDisposable
         if (string.IsNullOrWhiteSpace(config.Storage.OutputFolder)) return;
         if (string.IsNullOrWhiteSpace(config.Camera.DeviceMoniker)) return;
 
+        // One timestamp drives both the burned-in watermark and the on-disk filename so they always match.
+        var captureTime = DateTime.Now;
+        var watermark = config.Watermark;
+        Action<System.Drawing.Bitmap>? beforeEncode = watermark.Enabled
+            ? frame => ApplyWatermark(frame, captureTime, watermark)
+            : null;
+
         var result = await _cameraService.TryCaptureAsync(
             config.Camera.DeviceMoniker,
             config.Camera.Width,
             config.Camera.Height,
             config.Camera.JpegQuality,
-            useHighestResolution: config.Camera.UseHighestResolution);
+            useHighestResolution: config.Camera.UseHighestResolution,
+            beforeEncode: beforeEncode);
 
         if (!result.Success)
         {
@@ -251,10 +264,9 @@ public sealed class TrayApp : IDisposable
 
         try
         {
-            var now = DateTime.Now;
-            var dayDir = Path.Combine(config.Storage.OutputFolder, now.ToString("yyyy-MM-dd"));
+            var dayDir = Path.Combine(config.Storage.OutputFolder, captureTime.ToString("yyyy-MM-dd"));
             Directory.CreateDirectory(dayDir);
-            var path = Path.Combine(dayDir, now.ToString("HH-mm-ss") + ".jpg");
+            var path = Path.Combine(dayDir, captureTime.ToString("HH-mm-ss") + ".jpg");
             await File.WriteAllBytesAsync(path, result.JpegBytes!);
             _todayCount++;
             Log.Info($"captured {result.Width}x{result.Height} {result.JpegBytes!.Length / 1024.0:N1}KB in {result.ElapsedMilliseconds}ms -> {Path.GetFileName(path)}");
@@ -265,6 +277,19 @@ public sealed class TrayApp : IDisposable
         {
             _stickyBusyUntil = DateTime.Now.Add(StickyBusyDuration);
             Log.Error("failed to write capture to disk", ex);
+        }
+    }
+
+    private static void ApplyWatermark(System.Drawing.Bitmap frame, DateTime timestamp, WatermarkConfig cfg)
+    {
+        try
+        {
+            TimestampWatermark.Draw(frame, timestamp, cfg);
+        }
+        catch (Exception ex)
+        {
+            // A watermark failure must never cost us the photo — save the frame without it.
+            Log.Warn("watermark draw failed; saving frame without it: " + ex.Message);
         }
     }
 
@@ -349,4 +374,26 @@ public sealed class TrayApp : IDisposable
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Show();
     }
+
+    private void OpenTimelapse()
+    {
+        if (_timelapseWindow != null)
+        {
+            _timelapseWindow.Activate();
+            return;
+        }
+
+        var folder = _configStore.Load().Storage.OutputFolder;
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            MessageBox.Show("输出文件夹尚未配置或不存在，暂无照片可合成。", "ClassLapse",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        _timelapseWindow = new TimelapseWindow(_configStore);
+        _timelapseWindow.Closed += (_, _) => _timelapseWindow = null;
+        _timelapseWindow.Show();
+    }
+
 }

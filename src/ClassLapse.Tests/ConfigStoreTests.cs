@@ -234,6 +234,45 @@ public class ConfigStoreTests : IDisposable
         Assert.Equal(90, store.Load().Schedule.Entries[0].IntervalSeconds);
     }
 
+    [Fact]
+    public void Load_defaults_enable_watermark()
+    {
+        var store = new ConfigStore(_tmpPath);
+
+        var config = store.Load();
+
+        Assert.True(config.Watermark.Enabled);
+        Assert.Equal(WatermarkPosition.BottomRight, config.Watermark.Position);
+        Assert.Equal("yyyy-MM-dd HH:mm:ss", config.Watermark.Format);
+    }
+
+    [Fact]
+    public void Save_then_Load_preserves_watermark()
+    {
+        var store = new ConfigStore(_tmpPath);
+        store.Save(new AppConfig
+        {
+            Watermark = new WatermarkConfig
+            {
+                Enabled = false,
+                Position = WatermarkPosition.TopLeft,
+                Format = "HH:mm",
+                FontSize = 42,
+                Color = "#00FF00",
+                Outline = false,
+            },
+        });
+
+        var read = store.Load();
+
+        Assert.False(read.Watermark.Enabled);
+        Assert.Equal(WatermarkPosition.TopLeft, read.Watermark.Position);
+        Assert.Equal("HH:mm", read.Watermark.Format);
+        Assert.Equal(42, read.Watermark.FontSize);
+        Assert.Equal("#00FF00", read.Watermark.Color);
+        Assert.False(read.Watermark.Outline);
+    }
+
     private static AppConfig ConfigWithInterval(int seconds) => new()
     {
         Schedule = new ScheduleConfig
