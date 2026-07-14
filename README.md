@@ -14,6 +14,7 @@
 - **自动清理**——可选按保留天数 + 磁盘上限滚动删旧
 - **设备最高分辨率**——默认按摄像头能输出的最高分辨率拍摄
 - **一键合成延时视频**——托盘里选若干天（可整学期）后台合成 mp4，不打断拍照（需机器上有 ffmpeg）
+- **时间戳水印**——拍照即把时间烧进画面（合成的延时视频自带时间推进）；位置/格式/颜色/字号可调
 
 ## 截图
 
@@ -30,6 +31,7 @@
 ─────────────────────────
 📷  立即拍一张（测试）
 📂  打开输出文件夹
+🎬  合成延时视频...
 ⚙️  设置...
 📝  打开配置文件 (高级)
 ─────────────────────────
@@ -51,7 +53,7 @@
 
 ```powershell
 dotnet build -c Release
-dotnet test                   # 期望 60 个 pass (30 schedule + 7 config + 5 migration + 18 timelapse)
+dotnet test                   # 期望 67 个 pass (30 schedule + 9 config + 5 migration + 18 timelapse + 5 watermark)
 ```
 
 ### 发布
@@ -83,16 +85,17 @@ ClassLapse/
 │   │   │   ├── FfmpegLocator.cs       # 探测 ffmpeg：配置路径 / exe 同目录 / PATH
 │   │   │   ├── FfmpegCommand.cs       # 纯函数：ffconcat 列表 + ffmpeg argv 构造
 │   │   │   ├── TimelapseComposer.cs   # 跑 ffmpeg 合成 mp4，进度/取消/兜底
+│   │   │   ├── TimestampWatermark.cs  # 把时间戳画到 Bitmap（编码前烧入）+ 纯定位/格式/颜色 helper
 │   │   │   ├── CameraEnumerator.cs   # DirectShow VideoInputDevice 枚举
-│   │   │   ├── CameraService.cs      # 异步 TryCaptureAsync，立即释放设备
+│   │   │   ├── CameraService.cs      # 异步 TryCaptureAsync，立即释放设备（beforeEncode 钩子供烧水印）
 │   │   │   ├── ConfigStore.cs        # JSON 读写 + 原子 .tmp+Replace + 损坏自愈 + 启动迁移
 │   │   │   ├── AutoStartManager.cs   # HKCU\Run\ClassLapse
 │   │   │   ├── StorageJanitor.cs     # 按天数+磁盘上限滚动清理
 │   │   │   ├── Logger.cs             # 按天滚动文本日志
 │   │   │   └── DevCli.cs             # --list-cameras / --capture <idx> <out>
-│   │   ├── Models/                   # AppConfig / ScheduleConfig / ScheduleEntry / TimelapseConfig ...
-│   │   └── Views/                    # SettingsWindow（4 Tab）+ TimelapseWindow（合成延时）
-│   └── ClassLapse.Tests/             # xUnit (Schedule / Config / Migration / Ffmpeg* / CaptureLibrary)
+│   │   ├── Models/                   # AppConfig / ScheduleConfig / ScheduleEntry / TimelapseConfig / WatermarkConfig ...
+│   │   └── Views/                    # SettingsWindow（5 Tab）+ TimelapseWindow（合成延时）
+│   └── ClassLapse.Tests/             # xUnit (Schedule / Config / Migration / Ffmpeg* / CaptureLibrary / Watermark)
 └── .gitignore
 ```
 

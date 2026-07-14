@@ -240,12 +240,20 @@ public sealed class TrayApp : IDisposable
         if (string.IsNullOrWhiteSpace(config.Storage.OutputFolder)) return;
         if (string.IsNullOrWhiteSpace(config.Camera.DeviceMoniker)) return;
 
+        // One timestamp drives both the burned-in watermark and the on-disk filename so they always match.
+        var captureTime = DateTime.Now;
+        var watermark = config.Watermark;
+        Action<System.Drawing.Bitmap>? beforeEncode = watermark.Enabled
+            ? frame => ApplyWatermark(frame, captureTime, watermark)
+            : null;
+
         var result = await _cameraService.TryCaptureAsync(
             config.Camera.DeviceMoniker,
             config.Camera.Width,
             config.Camera.Height,
             config.Camera.JpegQuality,
-            useHighestResolution: config.Camera.UseHighestResolution);
+            useHighestResolution: config.Camera.UseHighestResolution,
+            beforeEncode: beforeEncode);
 
         if (!result.Success)
         {
@@ -256,10 +264,9 @@ public sealed class TrayApp : IDisposable
 
         try
         {
-            var now = DateTime.Now;
-            var dayDir = Path.Combine(config.Storage.OutputFolder, now.ToString("yyyy-MM-dd"));
+            var dayDir = Path.Combine(config.Storage.OutputFolder, captureTime.ToString("yyyy-MM-dd"));
             Directory.CreateDirectory(dayDir);
-            var path = Path.Combine(dayDir, now.ToString("HH-mm-ss") + ".jpg");
+            var path = Path.Combine(dayDir, captureTime.ToString("HH-mm-ss") + ".jpg");
             await File.WriteAllBytesAsync(path, result.JpegBytes!);
             _todayCount++;
             Log.Info($"captured {result.Width}x{result.Height} {result.JpegBytes!.Length / 1024.0:N1}KB in {result.ElapsedMilliseconds}ms -> {Path.GetFileName(path)}");
@@ -270,6 +277,19 @@ public sealed class TrayApp : IDisposable
         {
             _stickyBusyUntil = DateTime.Now.Add(StickyBusyDuration);
             Log.Error("failed to write capture to disk", ex);
+        }
+    }
+
+    private static void ApplyWatermark(System.Drawing.Bitmap frame, DateTime timestamp, WatermarkConfig cfg)
+    {
+        try
+        {
+            TimestampWatermark.Draw(frame, timestamp, cfg);
+        }
+        catch (Exception ex)
+        {
+            // A watermark failure must never cost us the photo — save the frame without it.
+            Log.Warn("watermark draw failed; saving frame without it: " + ex.Message);
         }
     }
 
@@ -375,4 +395,5 @@ public sealed class TrayApp : IDisposable
         _timelapseWindow.Closed += (_, _) => _timelapseWindow = null;
         _timelapseWindow.Show();
     }
+
 }

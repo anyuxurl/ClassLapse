@@ -37,6 +37,7 @@ public sealed class CameraService
         int desiredHeight,
         int jpegQuality,
         bool useHighestResolution = false,
+        Action<Bitmap>? beforeEncode = null,
         CancellationToken ct = default)
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -130,6 +131,8 @@ public sealed class CameraService
 
         try
         {
+            // Last touch before encoding — e.g. burn a timestamp watermark onto the frame.
+            beforeEncode?.Invoke(frame);
             byte[] jpeg = EncodeJpeg(frame, jpegQuality);
             int w = frame.Width, h = frame.Height;
             sw.Stop();

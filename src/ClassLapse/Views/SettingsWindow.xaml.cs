@@ -5,6 +5,7 @@ using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using ClassLapse.Core;
 using ClassLapse.Models;
 using Microsoft.Win32;
@@ -25,6 +26,15 @@ public partial class SettingsWindow : Window
         DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday,
         DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday,
     };
+
+    // Watermark position dropdown, in display order; index maps 1:1 to PositionNames.
+    private static readonly WatermarkPosition[] PositionOrder =
+    {
+        WatermarkPosition.BottomRight, WatermarkPosition.TopRight,
+        WatermarkPosition.BottomLeft, WatermarkPosition.TopLeft,
+    };
+
+    private static readonly string[] PositionNames = { "右下", "右上", "左下", "左上" };
 
     private readonly ConfigStore _configStore;
     private readonly CameraService _cameraService;
@@ -54,6 +64,8 @@ public partial class SettingsWindow : Window
             Title = "ClassLapse · 首次运行设置";
         }
 
+        foreach (var name in PositionNames) WatermarkPositionCombo.Items.Add(name);
+
         PopulateFromConfig(_config);
         PopulateCameras(selectMoniker: _config.Camera.DeviceMoniker);
         VersionText.Text = "版本 " + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0");
@@ -63,6 +75,7 @@ public partial class SettingsWindow : Window
         ApplyHighestResolutionLock();
         _loaded = true;
         UpdateEstimate();
+        RefreshWatermarkPreview();
     }
 
     private void PopulateFromConfig(AppConfig config)
@@ -89,6 +102,16 @@ public partial class SettingsWindow : Window
         CleanupDaysBox.Text = config.Storage.AutoCleanupDays.ToString();
         MaxDiskBox.Text = config.Storage.MaxDiskUsageGB.ToString();
         OnAutoCleanupToggle(this, new RoutedEventArgs());
+
+        var wm = config.Watermark;
+        WatermarkEnableCheck.IsChecked = wm.Enabled;
+        int posIdx = Array.IndexOf(PositionOrder, wm.Position);
+        WatermarkPositionCombo.SelectedIndex = posIdx >= 0 ? posIdx : 0;
+        WatermarkFormatBox.Text = wm.Format;
+        WatermarkFontSizeBox.Text = wm.FontSize.ToString();
+        WatermarkColorBox.Text = wm.Color;
+        WatermarkOutlineCheck.IsChecked = wm.Outline;
+        ApplyWatermarkEnabledLock();
 
         AutoStartCheck.IsChecked = config.AutoStartWithWindows;
     }
@@ -578,6 +601,99 @@ public partial class SettingsWindow : Window
         MaxDiskBox.IsEnabled = enabled;
     }
 
+    // ----- watermark -----
+
+    private void OnWatermarkOptionChanged(object sender, RoutedEventArgs e)
+    {
+        ApplyWatermarkEnabledLock();
+        RefreshWatermarkPreview();
+    }
+
+    private void OnWatermarkOptionChanged(object sender, SelectionChangedEventArgs e) => RefreshWatermarkPreview();
+    private void OnWatermarkOptionChanged(object sender, TextChangedEventArgs e) => RefreshWatermarkPreview();
+
+    private void ApplyWatermarkEnabledLock()
+    {
+        bool on = WatermarkEnableCheck.IsChecked == true;
+        WatermarkPositionCombo.IsEnabled = on;
+        WatermarkFormatBox.IsEnabled = on;
+        WatermarkFontSizeBox.IsEnabled = on;
+        WatermarkColorBox.IsEnabled = on;
+        WatermarkOutlineCheck.IsEnabled = on;
+    }
+
+    private WatermarkConfig CollectWatermark()
+    {
+        int idx = WatermarkPositionCombo.SelectedIndex;
+        var pos = (idx >= 0 && idx < PositionOrder.Length) ? PositionOrder[idx] : WatermarkPosition.BottomRight;
+
+        int fontSize = 0;
+        if (int.TryParse(WatermarkFontSizeBox.Text.Trim(), out int fs) && fs > 0) fontSize = fs;
+
+        string format = string.IsNullOrWhiteSpace(WatermarkFormatBox.Text)
+            ? "yyyy-MM-dd HH:mm:ss"
+            : WatermarkFormatBox.Text; // keep spacing as typed
+        string color = string.IsNullOrWhiteSpace(WatermarkColorBox.Text) ? "#FFFFFF" : WatermarkColorBox.Text.Trim();
+
+        return new WatermarkConfig
+        {
+            Enabled = WatermarkEnableCheck.IsChecked == true,
+            Position = pos,
+            Format = format,
+            FontSize = fontSize,
+            Color = color,
+            Outline = WatermarkOutlineCheck.IsChecked == true,
+        };
+    }
+
+    private void RefreshWatermarkPreview()
+    {
+        if (!_loaded) return;
+        try
+        {
+            var cfg = CollectWatermark();
+            using var bmp = BuildPreviewBitmap(cfg, DateTime.Now);
+            WatermarkPreview.Source = ToBitmapSource(bmp);
+        }
+        catch
+        {
+            // Preview is best-effort; a bad format/colour just falls back inside the renderer.
+        }
+    }
+
+    private static System.Drawing.Bitmap BuildPreviewBitmap(WatermarkConfig cfg, DateTime ts)
+    {
+        // Render at a representative capture size so auto font-sizing matches what photos will look like;
+        // the Image control downscales it. A dark→light gradient shows legibility on both extremes.
+        const int w = 1280, h = 720;
+        var bmp = new System.Drawing.Bitmap(w, h);
+        using (var g = System.Drawing.Graphics.FromImage(bmp))
+        using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(
+                   new System.Drawing.Rectangle(0, 0, w, h),
+                   System.Drawing.Color.FromArgb(70, 80, 95),
+                   System.Drawing.Color.FromArgb(205, 210, 215),
+                   System.Drawing.Drawing2D.LinearGradientMode.Horizontal))
+        {
+            g.FillRectangle(brush, 0, 0, w, h);
+        }
+        if (cfg.Enabled) TimestampWatermark.Draw(bmp, ts, cfg);
+        return bmp;
+    }
+
+    private static BitmapSource ToBitmapSource(System.Drawing.Bitmap bmp)
+    {
+        using var ms = new MemoryStream();
+        bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+        ms.Position = 0;
+        var bi = new BitmapImage();
+        bi.BeginInit();
+        bi.CacheOption = BitmapCacheOption.OnLoad;
+        bi.StreamSource = ms;
+        bi.EndInit();
+        bi.Freeze();
+        return bi;
+    }
+
     private void OnBrowseFolderClick(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog
@@ -807,6 +923,7 @@ public partial class SettingsWindow : Window
 
         built = new AppConfig
         {
+            SchemaVersion = _config.SchemaVersion,
             Schedule = new ScheduleConfig
             {
                 Entries = entries,
@@ -827,6 +944,9 @@ public partial class SettingsWindow : Window
                 AutoCleanupDays = cleanupDays,
                 MaxDiskUsageGB = maxGB,
             },
+            // Carry through sections this window doesn't edit so saving here never resets them.
+            Timelapse = _config.Timelapse,
+            Watermark = CollectWatermark(),
             AutoStartWithWindows = AutoStartCheck.IsChecked == true,
             PausedUntil = _config.PausedUntil,
         };
