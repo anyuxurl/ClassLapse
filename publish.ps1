@@ -43,10 +43,11 @@ $projectPath = Join-Path $repoRoot "src/ClassLapse/ClassLapse.csproj"
 # Get-Content defaults to the system code page (GBK on Chinese Windows), which
 # mangles UTF-8 csproj content with Chinese text and breaks XML parsing.
 $csprojText = Get-Content $projectPath -Raw -Encoding UTF8
-$version = "0.1.0"
-if ($csprojText -match '<Version>([^<]+)</Version>') {
-    $version = $matches[1]
+if ($csprojText -notmatch '<Version>([^<]+)</Version>') {
+    Write-Error "ClassLapse.csproj does not contain a <Version> value."
+    exit 1
 }
+$version = $matches[1]
 
 Write-Host "ClassLapse v$version" -ForegroundColor Cyan
 

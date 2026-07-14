@@ -14,7 +14,7 @@ git pull
 会产出：
 - `publish/ClassLapse.exe`（~65 MB，已内嵌 .NET 8 Runtime）
 - `publish/README.md` + `publish/deployment.md`
-- `ClassLapse-v0.1.0-win-x64.zip`（解压即用）
+- `ClassLapse-v0.4.0-win-x64.zip`（解压即用；文件名版本来自项目文件）
 
 把 zip 拷到 U 盘，或者放 OneDrive、坚果云之类。
 

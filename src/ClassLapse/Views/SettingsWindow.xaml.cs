@@ -68,7 +68,7 @@ public partial class SettingsWindow : Window
 
         PopulateFromConfig(_config);
         PopulateCameras(selectMoniker: _config.Camera.DeviceMoniker);
-        VersionText.Text = "版本 " + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.1.0");
+        VersionText.Text = "版本 " + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "未知");
         ConfigPathBox.Text = _configStore.FilePath;
         LogDirBox.Text = Log.Instance.LogDir;
         AutoStartCheck.IsChecked = AutoStartManager.IsEnabled();
