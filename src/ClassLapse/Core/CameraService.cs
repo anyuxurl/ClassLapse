@@ -25,10 +25,12 @@ public sealed class CameraService
         ImageCodecInfo.GetImageEncoders().First(c => c.FormatID == ImageFormat.Jpeg.Guid);
 
     private readonly TimeSpan _captureTimeout;
+    private readonly TimeSpan _stopTimeout;
 
-    public CameraService(TimeSpan? captureTimeout = null)
+    public CameraService(TimeSpan? captureTimeout = null, TimeSpan? stopTimeout = null)
     {
         _captureTimeout = captureTimeout ?? TimeSpan.FromSeconds(4);
+        _stopTimeout = stopTimeout ?? TimeSpan.FromSeconds(2);
     }
 
     public async Task<CaptureResult> TryCaptureAsync(
@@ -66,7 +68,8 @@ public sealed class CameraService
         {
             try
             {
-                tcs.TrySetResult((Bitmap)args.Frame.Clone());
+                var clone = (Bitmap)args.Frame.Clone();
+                if (!tcs.TrySetResult(clone)) clone.Dispose();
             }
             catch (Exception ex)
             {
@@ -96,7 +99,7 @@ public sealed class CameraService
             }
 
             using var ctReg = ct.Register(() => tcs.TrySetCanceled(ct));
-            var winner = await Task.WhenAny(tcs.Task, Task.Delay(_captureTimeout, ct));
+            var winner = await Task.WhenAny(tcs.Task, Task.Delay(_captureTimeout));
 
             if (winner != tcs.Task)
             {
@@ -186,19 +189,31 @@ public sealed class CameraService
         device.VideoResolution = best;
     }
 
-    private static void SafeStop(VideoCaptureDevice device)
+    private void SafeStop(VideoCaptureDevice device)
     {
         try
         {
-            if (device.IsRunning)
+            if (!device.IsRunning) return;
+
+            device.SignalToStop();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (device.IsRunning && sw.Elapsed < _stopTimeout)
             {
-                device.SignalToStop();
-                device.WaitForStop();
+                Thread.Sleep(25);
             }
+
+            if (!device.IsRunning) return;
+
+            Log.Warn($"camera did not stop within {_stopTimeout.TotalSeconds:0.#}s; forcing stop in background");
+            _ = Task.Run(() =>
+            {
+                try { device.Stop(); }
+                catch (Exception ex) { Log.Warn("camera force-stop failed: " + ex.Message); }
+            });
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort release; ignore failures from a device that already died.
+            Log.Warn("camera stop failed: " + ex.Message);
         }
     }
 

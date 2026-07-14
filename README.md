@@ -8,6 +8,7 @@
 - **极低占用**——闲置 CPU 0%、内存 < 60 MB
 - **可选摄像头**——避开展台等老师上课会调用的设备
 - **被占用即让**——目标摄像头被希沃主软件抢走时静默跳过 + 写日志，绝不抢设备
+- **可靠采集**——照片唯一命名 + 同目录原子写盘，异常退出由守护进程自动拉起，每次成功/失败都有独立流水
 - **按条目的计划**——每个条目独立配置：间隔模式（时段内每 N 秒）/ 定时模式（在指定时刻各拍一张）、生效星期、时段或时间点；上午/下午/晚自习、打铃/升旗时刻都能表达，条目之间允许重叠
 - **首次运行向导**——开箱即用，引导选摄像头/路径/计划
 - **开机自启**——HKCU 注册表，无需管理员权限
@@ -23,6 +24,7 @@
 ```
 [绿] ClassLapse · 运行中
 今日已拍: 384 张
+最后成功: 今天 16:42:30
 摄像头: USB Camera (HD Webcam)
 ─────────────────────────
 ⏸  暂停 1 小时
@@ -53,7 +55,7 @@
 
 ```powershell
 dotnet build -c Release
-dotnet test                   # 期望 67 个 pass (30 schedule + 9 config + 5 migration + 18 timelapse + 5 watermark)
+dotnet test                   # 期望 73 个 pass（含 6 个采集可靠性测试）
 ```
 
 ### 发布
@@ -79,6 +81,9 @@ ClassLapse/
 │   │   ├── TrayApp.cs                # H.NotifyIcon 托盘 + Scheduler 订阅 + 拍照写盘
 │   │   ├── Core/
 │   │   │   ├── CaptureScheduler.cs   # System.Threading.Timer，1s 节拍 + 重入锁 + 每条目计时
+│   │   │   ├── CaptureFileStore.cs   # 唯一文件名 + 临时文件落盘 + 原子重命名，绝不覆盖已有照片
+│   │   │   ├── CaptureJournal.cs     # AppData JSONL 拍摄流水，记录成功、相机失败和写盘失败
+│   │   │   ├── ProcessWatchdog.cs    # 伴随守护进程，异常退出自动重启，正常退出不拉起
 │   │   │   ├── ScheduleDecision.cs   # 纯函数：(now, schedule, paused, lastByEntry) -> 哪些条目该拍
 │   │   │   ├── LegacyScheduleMigration.cs # 旧全局计划 → 条目列表（确定性 id，幂等）
 │   │   │   ├── CaptureLibrary.cs      # 枚举 yyyy-MM-dd 日期 + 按时序收集帧（合成用）
@@ -95,7 +100,7 @@ ClassLapse/
 │   │   │   └── DevCli.cs             # --list-cameras / --capture <idx> <out>
 │   │   ├── Models/                   # AppConfig / ScheduleConfig / ScheduleEntry / TimelapseConfig / WatermarkConfig ...
 │   │   └── Views/                    # SettingsWindow（5 Tab）+ TimelapseWindow（合成延时）
-│   └── ClassLapse.Tests/             # xUnit (Schedule / Config / Migration / Ffmpeg* / CaptureLibrary / Watermark)
+│   └── ClassLapse.Tests/             # xUnit (Schedule / Config / Reliability / Ffmpeg* / CaptureLibrary / Watermark)
 └── .gitignore
 ```
 

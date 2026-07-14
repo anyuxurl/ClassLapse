@@ -23,14 +23,19 @@ public sealed class TrayApp : IDisposable
     private readonly CameraService _cameraService;
     private readonly CaptureScheduler _scheduler;
     private readonly StorageJanitor _janitor;
+    private readonly CaptureFileStore _captureStore;
+    private readonly CaptureJournal _captureJournal;
+    private readonly SemaphoreSlim _captureGate = new(initialCount: 1, maxCount: 1);
 
     private DateTime _todayStartedAt = DateTime.Today;
     private int _todayCount;
+    private DateTime? _lastSuccessAt;
     private IconState _currentState = IconState.Green;
     private DateTime? _stickyBusyUntil;
 
     private MenuItem? _statusItem;
     private MenuItem? _todayItem;
+    private MenuItem? _lastCaptureItem;
     private MenuItem? _cameraItem;
     private SettingsWindow? _settingsWindow;
     private TimelapseWindow? _timelapseWindow;
@@ -41,6 +46,21 @@ public sealed class TrayApp : IDisposable
         _cameraService = cameraService;
         _scheduler = scheduler;
         _janitor = new StorageJanitor();
+        _captureStore = new CaptureFileStore();
+        _captureJournal = new CaptureJournal();
+        _lastSuccessAt = _captureJournal.FindLastSuccessfulCapture();
+
+        try
+        {
+            var config = _configStore.Load();
+            _todayCount = _captureStore.CountCapturesForDay(
+                config.Storage.OutputFolder,
+                DateOnly.FromDateTime(DateTime.Today));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("failed to initialize capture counters: " + ex.Message);
+        }
 
         _tray = new TaskbarIcon
         {
@@ -94,6 +114,9 @@ public sealed class TrayApp : IDisposable
 
         _todayItem = new MenuItem { Header = "今日已拍: 0 张", IsEnabled = false };
         menu.Items.Add(_todayItem);
+
+        _lastCaptureItem = new MenuItem { Header = "最后成功: 尚无记录", IsEnabled = false };
+        menu.Items.Add(_lastCaptureItem);
 
         _cameraItem = new MenuItem { Header = "摄像头: 未配置", IsEnabled = false };
         menu.Items.Add(_cameraItem);
@@ -150,7 +173,9 @@ public sealed class TrayApp : IDisposable
             if (DateTime.Today > _todayStartedAt)
             {
                 _todayStartedAt = DateTime.Today;
-                _todayCount = 0;
+                _todayCount = _captureStore.CountCapturesForDay(
+                    config.Storage.OutputFolder,
+                    DateOnly.FromDateTime(_todayStartedAt));
             }
 
             IconState target = ResolveIconState(reason);
@@ -184,6 +209,10 @@ public sealed class TrayApp : IDisposable
         if (_todayItem != null)
         {
             _todayItem.Header = $"今日已拍: {_todayCount} 张";
+        }
+        if (_lastCaptureItem != null)
+        {
+            _lastCaptureItem.Header = FormatLastSuccess(_lastSuccessAt);
         }
         if (_cameraItem != null)
         {
@@ -240,44 +269,82 @@ public sealed class TrayApp : IDisposable
         if (string.IsNullOrWhiteSpace(config.Storage.OutputFolder)) return;
         if (string.IsNullOrWhiteSpace(config.Camera.DeviceMoniker)) return;
 
-        // One timestamp drives both the burned-in watermark and the on-disk filename so they always match.
+        await _captureGate.WaitAsync().ConfigureAwait(false);
         var captureTime = DateTime.Now;
-        var watermark = config.Watermark;
-        Action<System.Drawing.Bitmap>? beforeEncode = watermark.Enabled
-            ? frame => ApplyWatermark(frame, captureTime, watermark)
-            : null;
-
-        var result = await _cameraService.TryCaptureAsync(
-            config.Camera.DeviceMoniker,
-            config.Camera.Width,
-            config.Camera.Height,
-            config.Camera.JpegQuality,
-            useHighestResolution: config.Camera.UseHighestResolution,
-            beforeEncode: beforeEncode);
-
-        if (!result.Success)
-        {
-            _stickyBusyUntil = DateTime.Now.Add(StickyBusyDuration);
-            Log.Warn($"capture failed: {result.Failure} after {result.ElapsedMilliseconds}ms — {result.ErrorMessage}");
-            return;
-        }
-
         try
         {
-            var dayDir = Path.Combine(config.Storage.OutputFolder, captureTime.ToString("yyyy-MM-dd"));
-            Directory.CreateDirectory(dayDir);
-            var path = Path.Combine(dayDir, captureTime.ToString("HH-mm-ss") + ".jpg");
-            await File.WriteAllBytesAsync(path, result.JpegBytes!);
-            _todayCount++;
-            Log.Info($"captured {result.Width}x{result.Height} {result.JpegBytes!.Length / 1024.0:N1}KB in {result.ElapsedMilliseconds}ms -> {Path.GetFileName(path)}");
+            // One timestamp drives both the burned-in watermark and the on-disk filename.
+            var watermark = config.Watermark;
+            Action<System.Drawing.Bitmap>? beforeEncode = watermark.Enabled
+                ? frame => ApplyWatermark(frame, captureTime, watermark)
+                : null;
 
-            _janitor.RunIfDue(config.Storage);
+            var result = await _cameraService.TryCaptureAsync(
+                config.Camera.DeviceMoniker,
+                config.Camera.Width,
+                config.Camera.Height,
+                config.Camera.JpegQuality,
+                useHighestResolution: config.Camera.UseHighestResolution,
+                beforeEncode: beforeEncode).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                _stickyBusyUntil = DateTime.Now.Add(StickyBusyDuration);
+                Log.Warn($"capture failed: {result.Failure} after {result.ElapsedMilliseconds}ms — {result.ErrorMessage}");
+                RecordCapture(new CaptureJournal.Entry(
+                    captureTime, false, null, 0, 0, 0, result.ElapsedMilliseconds,
+                    result.Failure.ToString(), result.ErrorMessage));
+                return;
+            }
+
+            try
+            {
+                string path = await _captureStore.SaveAsync(
+                    config.Storage.OutputFolder,
+                    captureTime,
+                    result.JpegBytes!).ConfigureAwait(false);
+                _todayCount++;
+                _lastSuccessAt = captureTime;
+                RecordCapture(new CaptureJournal.Entry(
+                    captureTime, true, path, result.Width, result.Height, result.JpegBytes!.Length,
+                    result.ElapsedMilliseconds, null, null));
+                Log.Info($"captured {result.Width}x{result.Height} {result.JpegBytes.Length / 1024.0:N1}KB in {result.ElapsedMilliseconds}ms -> {Path.GetFileName(path)}");
+
+                _janitor.RunIfDue(config.Storage);
+            }
+            catch (Exception ex)
+            {
+                _stickyBusyUntil = DateTime.Now.Add(StickyBusyDuration);
+                RecordCapture(new CaptureJournal.Entry(
+                    captureTime, false, null, result.Width, result.Height, result.JpegBytes!.Length,
+                    result.ElapsedMilliseconds, "StorageWrite", ex.Message));
+                Log.Error("failed to write capture to disk", ex);
+            }
         }
         catch (Exception ex)
         {
             _stickyBusyUntil = DateTime.Now.Add(StickyBusyDuration);
-            Log.Error("failed to write capture to disk", ex);
+            RecordCapture(new CaptureJournal.Entry(
+                captureTime, false, null, 0, 0, 0, 0, "Unexpected", ex.Message));
+            Log.Error("unexpected capture failure", ex);
         }
+        finally
+        {
+            _captureGate.Release();
+        }
+    }
+
+    private void RecordCapture(CaptureJournal.Entry entry)
+    {
+        _captureJournal.TryAppend(entry);
+    }
+
+    private static string FormatLastSuccess(DateTime? timestamp)
+    {
+        if (!timestamp.HasValue) return "最后成功: 尚无记录";
+        return timestamp.Value.Date == DateTime.Today
+            ? $"最后成功: 今天 {timestamp.Value:HH:mm:ss}"
+            : $"最后成功: {timestamp.Value:yyyy-MM-dd HH:mm:ss}";
     }
 
     private static void ApplyWatermark(System.Drawing.Bitmap frame, DateTime timestamp, WatermarkConfig cfg)

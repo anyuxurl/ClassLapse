@@ -49,7 +49,7 @@ public static class CaptureLibrary
 
     /// <summary>
     /// Every non-empty .jpg frame path across the given days, in chronological order: days by
-    /// date, files within a day by ordinal name (<c>HH-mm-ss.jpg</c> sorts == capture time).
+    /// date, files within a day by ordinal name (<c>HH-mm-ss-fff.jpg</c> sorts == capture time).
     /// </summary>
     public static IReadOnlyList<string> CollectFrames(IEnumerable<CaptureDay> days)
     {

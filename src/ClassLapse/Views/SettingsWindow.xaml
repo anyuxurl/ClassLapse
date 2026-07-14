@@ -172,7 +172,7 @@
                                     Click="OnBrowseFolderClick"/>
                         </StackPanel>
                         <TextBlock Style="{StaticResource HintText}"
-                                   Text="照片按日期归档：{输出文件夹}/2026-05-17/14-30-00.jpg"/>
+                                   Text="照片按日期归档：{输出文件夹}/2026-05-17/14-30-00-123.jpg"/>
 
                         <CheckBox x:Name="AutoCleanupCheck" Content="启用自动清理（默认关闭）"
                                   Margin="0,18,0,0" Click="OnAutoCleanupToggle"/>
