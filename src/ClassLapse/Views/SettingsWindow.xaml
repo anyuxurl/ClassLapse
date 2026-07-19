@@ -5,22 +5,8 @@
         Width="680" Height="600"
         MinWidth="540" MinHeight="460"
         WindowStartupLocation="CenterScreen"
-        ShowInTaskbar="True">
-
-    <Window.Resources>
-        <Style TargetType="Label">
-            <Setter Property="Margin" Value="0,8,0,2"/>
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Padding" Value="4,3"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-        </Style>
-        <Style x:Key="HintText" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#777"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Margin" Value="0,2,0,0"/>
-        </Style>
-    </Window.Resources>
+        ShowInTaskbar="True"
+        Style="{StaticResource AppWindow}">
 
     <DockPanel LastChildFill="True">
 
@@ -36,19 +22,20 @@
             </StackPanel>
         </Border>
 
-        <Border DockPanel.Dock="Bottom" BorderBrush="#DDD" BorderThickness="0,1,0,0" Padding="12,8">
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource InputBgBrush}"
+                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="12,8">
             <Grid>
-                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#666"/>
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button x:Name="OkButton" Content="确定" Width="88" Height="28" Margin="6,0"
-                            Click="OnSaveClick" IsDefault="True"/>
+                            Click="OnSaveClick" IsDefault="True" Style="{StaticResource PrimaryButton}"/>
                     <Button x:Name="CancelButton" Content="取消" Width="88" Height="28" Margin="6,0,0,0"
                             Click="OnCancelClick" IsCancel="True"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <TabControl Margin="12">
+        <TabControl Margin="12" Background="Transparent" BorderBrush="{StaticResource DividerBrush}">
 
             <!-- ============ Tab 1: 拍照计划 ============ -->
             <TabItem Header="拍照计划">
@@ -63,10 +50,10 @@
                         <Button x:Name="AddEntryButton" Content="+ 添加条目" Width="120" HorizontalAlignment="Left"
                                 Margin="0,10,0,0" Click="OnAddEntryClick"/>
 
-                        <Border Margin="0,18,0,0" Padding="12" Background="#F5F8FA" CornerRadius="4">
+                        <Border Margin="0,18,0,0" Style="{StaticResource CardBorder}">
                             <StackPanel>
-                                <TextBlock Text="预计拍摄量" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="EstimateText" Margin="0,4,0,0" Foreground="#444" TextWrapping="Wrap"/>
+                                <TextBlock Text="预计拍摄量" Style="{StaticResource SectionHeader}"/>
+                                <TextBlock x:Name="EstimateText" Margin="0,6,0,0" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap"/>
                             </StackPanel>
                         </Border>
 
@@ -112,7 +99,7 @@
                         <Button Content="📷  用当前摄像头拍一张测试" Width="280" Height="32"
                                 Margin="0,16,0,0" HorizontalAlignment="Left"
                                 Click="OnTestCaptureClick"/>
-                        <TextBlock x:Name="CameraTestResult" Margin="0,8,0,0" Foreground="#444"
+                        <TextBlock x:Name="CameraTestResult" Margin="0,8,0,0" Foreground="{StaticResource TextSecondaryBrush}"
                                    TextWrapping="Wrap"/>
 
                     </StackPanel>
@@ -151,8 +138,8 @@
                                   Margin="0,14,0,0" Click="OnWatermarkOptionChanged"/>
 
                         <Label Content="预览"/>
-                        <Border BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Padding="4"
-                                HorizontalAlignment="Left" Background="#FAFAFA">
+                        <Border BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="4"
+                                HorizontalAlignment="Left" Background="{StaticResource CardBgBrush}">
                             <Image x:Name="WatermarkPreview" Width="384" Height="216" Stretch="Uniform"/>
                         </Border>
 
@@ -209,18 +196,18 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="12">
 
-                        <TextBlock Text="ClassLapse · 课堂延时" FontSize="20" FontWeight="SemiBold"/>
-                        <TextBlock x:Name="VersionText" Margin="0,2,0,12" Foreground="#666"/>
+                        <TextBlock Text="ClassLapse · 课堂延时" Style="{StaticResource TitleText}"/>
+                        <TextBlock x:Name="VersionText" Margin="0,2,0,12" Foreground="{StaticResource TextSecondaryBrush}"/>
                         <TextBlock Text="希沃白板自动拍照工具，按计划用指定摄像头拍照存盘，方便后期合成延时视频。"
-                                   TextWrapping="Wrap" Foreground="#444"/>
+                                   TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}"/>
 
-                        <Separator Margin="0,16"/>
+                        <Separator Style="{StaticResource SectionSeparator}"/>
 
                         <CheckBox x:Name="AutoStartCheck" Content="开机自动启动 (HKCU\Run)"/>
                         <TextBlock Style="{StaticResource HintText}"
                                    Text="勾选后将在 HKCU\Software\Microsoft\Windows\CurrentVersion\Run 写入当前 exe 路径。无需管理员权限。"/>
 
-                        <Separator Margin="0,16"/>
+                        <Separator Style="{StaticResource SectionSeparator}"/>
 
                         <Label Content="配置文件"/>
                         <StackPanel Orientation="Horizontal">

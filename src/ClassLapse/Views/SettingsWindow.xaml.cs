@@ -245,6 +245,7 @@ public partial class SettingsWindow : Window
             Padding = new Thickness(8, 1, 8, 1),
             Margin = new Thickness(8, 0, 0, 0),
         };
+        deleteBtn.Style = (Style)FindResource("DangerButton");
         Grid.SetColumn(deleteBtn, 4);
         header.Children.Add(deleteBtn);
 

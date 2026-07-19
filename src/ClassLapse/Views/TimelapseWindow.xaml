@@ -5,31 +5,22 @@
         Width="640" Height="600"
         MinWidth="540" MinHeight="500"
         WindowStartupLocation="CenterScreen"
-        ShowInTaskbar="True">
-
-    <Window.Resources>
-        <Style x:Key="HintText" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#777"/>
-            <Setter Property="FontSize" Value="11"/>
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Padding" Value="4,3"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-        </Style>
-    </Window.Resources>
+        ShowInTaskbar="True"
+        Style="{StaticResource AppWindow}">
 
     <DockPanel LastChildFill="True">
 
         <!-- bottom bar: status + progress + actions -->
-        <Border DockPanel.Dock="Bottom" BorderBrush="#DDD" BorderThickness="0,1,0,0" Padding="12,8">
+        <Border DockPanel.Dock="Bottom" Background="{StaticResource InputBgBrush}"
+                BorderBrush="{StaticResource DividerBrush}" BorderThickness="0,1,0,0" Padding="12,8">
             <Grid>
-                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="#666"
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}"
                            TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                     <ProgressBar x:Name="Progress" Width="150" Height="16" Margin="0,0,10,0"
                                  VerticalAlignment="Center" Minimum="0" Maximum="100" Visibility="Collapsed"/>
                     <Button x:Name="ComposeButton" Content="开始合成" Width="96" Height="28" Margin="2,0"
-                            Click="OnComposeClick" IsDefault="True"/>
+                            Click="OnComposeClick" IsDefault="True" Style="{StaticResource PrimaryButton}"/>
                     <Button x:Name="CancelComposeButton" Content="取消" Width="72" Height="28" Margin="2,0,0,0"
                             Click="OnCancelComposeClick" Visibility="Collapsed"/>
                     <Button x:Name="OpenResultButton" Content="打开" Width="72" Height="28" Margin="2,0,0,0"
@@ -50,7 +41,8 @@
             </Grid.RowDefinitions>
 
             <!-- ffmpeg status -->
-            <Border Grid.Row="0" Background="#F5F8FA" Padding="12,8" CornerRadius="4">
+            <Border Grid.Row="0" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource InputBorderBrush}"
+                    BorderThickness="1" Padding="12,8" CornerRadius="6">
                 <DockPanel>
                     <Button x:Name="PickFfmpegButton" DockPanel.Dock="Right" Content="选择 ffmpeg.exe"
                             Padding="8,2" Margin="8,0,0,0" VerticalAlignment="Center" Click="OnPickFfmpegClick"/>
@@ -61,7 +53,7 @@
 
             <!-- days header -->
             <DockPanel Grid.Row="1" Margin="0,14,0,4">
-                <TextBlock Text="选择要合成的日期" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Text="选择要合成的日期" Style="{StaticResource SectionHeader}" VerticalAlignment="Center"/>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
                     <Button Content="全选" Padding="8,2" Margin="0,0,6,0" Click="OnSelectAllClick"/>
                     <Button Content="清空" Padding="8,2" Click="OnSelectNoneClick"/>
@@ -69,7 +61,8 @@
             </DockPanel>
 
             <!-- day list -->
-            <Border Grid.Row="2" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4">
+            <Border Grid.Row="2" Background="{StaticResource InputBgBrush}" BorderBrush="{StaticResource InputBorderBrush}"
+                    BorderThickness="1" CornerRadius="6">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="DaysPanel" Margin="10,8"/>
                 </ScrollViewer>
