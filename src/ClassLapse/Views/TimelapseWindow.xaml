@@ -87,6 +87,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="帧率" VerticalAlignment="Center" Margin="0,0,6,0"/>
@@ -99,10 +100,19 @@
                 <ComboBox x:Name="ResolutionCombo" Grid.Row="0" Grid.Column="3" Width="170"
                           VerticalContentAlignment="Center" SelectionChanged="OnOptionChanged"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="输出" VerticalAlignment="Center" Margin="0,10,6,0"/>
-                <TextBox x:Name="OutputBox" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,10,0,0"
+                <CheckBox x:Name="BrightnessCheck" Grid.Row="0" Grid.Column="4" Content="亮度统一"
+                          VerticalAlignment="Center" HorizontalAlignment="Left" Margin="16,0,0,0" IsEnabled="False"
+                          ToolTip="消除画面忽明忽暗（webcam 自动曝光、开关灯、投影仪、天光变化）。时间窗平滑，保留白天→傍晚的缓慢明暗变化。"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="节奏" VerticalAlignment="Center" Margin="0,10,6,0"/>
+                <ComboBox x:Name="PaceCombo" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,10,0,0"
+                          HorizontalAlignment="Left" MinWidth="260"
+                          VerticalContentAlignment="Center" SelectionChanged="OnOptionChanged"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="输出" VerticalAlignment="Center" Margin="0,10,6,0"/>
+                <TextBox x:Name="OutputBox" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Margin="0,10,0,0"
                          TextChanged="OnOutputManuallyEdited"/>
-                <Button Grid.Row="1" Grid.Column="4" Content="另存为..." Padding="8,2" Margin="8,10,0,0"
+                <Button Grid.Row="2" Grid.Column="4" Content="另存为..." Padding="8,2" Margin="8,10,0,0"
                         Click="OnBrowseOutputClick"/>
             </Grid>
 

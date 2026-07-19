@@ -131,6 +131,10 @@ public sealed class TrayApp : IDisposable
         pauseToday.Click += (_, _) => PauseUntilEndOfDay();
         menu.Items.Add(pauseToday);
 
+        var pauseIndef = new MenuItem { Header = "⏸  持续暂停（手动恢复）" };
+        pauseIndef.Click += (_, _) => PauseIndefinitely();
+        menu.Items.Add(pauseIndef);
+
         var resume = new MenuItem { Header = "▶  恢复" };
         resume.Click += (_, _) => Resume();
         menu.Items.Add(resume);
@@ -228,7 +232,9 @@ public sealed class TrayApp : IDisposable
         ScheduleDecision.Reason.OutsideActiveDay => "今天不在计划内",
         ScheduleDecision.Reason.OutsideTimeWindows => DescribeNextWindow(config),
         ScheduleDecision.Reason.TooSoon => "运行中",
-        ScheduleDecision.Reason.Paused => $"已暂停至 {config.PausedUntil:HH:mm}",
+        ScheduleDecision.Reason.Paused => config.PausedIndefinitely
+            ? "已暂停（需手动恢复）"
+            : $"已暂停至 {config.PausedUntil:HH:mm}",
         _ => "运行中",
     };
 
@@ -378,9 +384,12 @@ public sealed class TrayApp : IDisposable
         await OnCaptureRequestedAsync(config);
     }
 
+    // Each pause action writes a full, mutually-exclusive state (the last click wins), so switching
+    // between timed and open-ended pause never leaves a stale flag behind.
     private void PauseFor(TimeSpan span)
     {
         var config = _configStore.Load();
+        config.PausedIndefinitely = false;
         config.PausedUntil = DateTime.Now.Add(span);
         _configStore.Save(config);
     }
@@ -388,13 +397,24 @@ public sealed class TrayApp : IDisposable
     private void PauseUntilEndOfDay()
     {
         var config = _configStore.Load();
+        config.PausedIndefinitely = false;
         config.PausedUntil = DateTime.Today.AddDays(1).AddSeconds(-1);
+        _configStore.Save(config);
+    }
+
+    // Open-ended "vacation" pause: stays paused across restarts until 恢复 is clicked.
+    private void PauseIndefinitely()
+    {
+        var config = _configStore.Load();
+        config.PausedIndefinitely = true;
+        config.PausedUntil = null;
         _configStore.Save(config);
     }
 
     private void Resume()
     {
         var config = _configStore.Load();
+        config.PausedIndefinitely = false;
         config.PausedUntil = null;
         _configStore.Save(config);
     }

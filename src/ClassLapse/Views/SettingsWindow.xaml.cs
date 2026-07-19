@@ -949,6 +949,7 @@ public partial class SettingsWindow : Window
             Watermark = CollectWatermark(),
             AutoStartWithWindows = AutoStartCheck.IsChecked == true,
             PausedUntil = _config.PausedUntil,
+            PausedIndefinitely = _config.PausedIndefinitely,
         };
         return true;
     }

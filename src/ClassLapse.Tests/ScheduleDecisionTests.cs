@@ -50,8 +50,9 @@ public class ScheduleDecisionTests
 
     private static ScheduleEvaluation Eval(
         DateTime now, ScheduleConfig schedule,
-        DateTime? paused = null, IReadOnlyDictionary<string, DateTime>? last = null)
-        => ScheduleDecision.Evaluate(now, schedule, paused, last ?? NoCaptures);
+        DateTime? paused = null, bool pausedIndefinitely = false,
+        IReadOnlyDictionary<string, DateTime>? last = null)
+        => ScheduleDecision.Evaluate(now, schedule, paused, pausedIndefinitely, last ?? NoCaptures);
 
     private static ScheduleConfig WeekdaysEightToFive() =>
         Schedule(Interval("w", new TimeOnly(8, 0), new TimeOnly(17, 0), 30));
@@ -160,6 +161,27 @@ public class ScheduleDecisionTests
         var pausedUntil = new DateTime(2026, 5, 17, 13, 0, 0);
 
         Assert.Equal(ScheduleDecision.Reason.Paused, Eval(sundayDuringDay, WeekdaysEightToFive(), paused: pausedUntil).Reason);
+    }
+
+    [Fact]
+    public void Paused_indefinitely_returns_Paused_even_inside_window()
+    {
+        // Open-ended "vacation" pause: no PausedUntil, yet capture is suppressed inside the window.
+        var now = new DateTime(2026, 5, 18, 10, 0, 0); // Monday, inside 08:00–17:00
+
+        Assert.Equal(ScheduleDecision.Reason.Paused,
+            Eval(now, WeekdaysEightToFive(), pausedIndefinitely: true).Reason);
+    }
+
+    [Fact]
+    public void Paused_indefinitely_holds_even_after_pausedUntil_elapsed()
+    {
+        // The open-ended flag wins over an already-elapsed timed pause — it never auto-resumes.
+        var now = new DateTime(2026, 5, 18, 10, 0, 0);
+        var elapsed = new DateTime(2026, 5, 18, 9, 0, 0);
+
+        Assert.Equal(ScheduleDecision.Reason.Paused,
+            Eval(now, WeekdaysEightToFive(), paused: elapsed, pausedIndefinitely: true).Reason);
     }
 
     // ----- multi-window (now multi-entry) -----

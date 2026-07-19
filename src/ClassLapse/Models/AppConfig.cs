@@ -12,5 +12,15 @@ public sealed class AppConfig
     public TimelapseConfig Timelapse { get; set; } = new();
     public WatermarkConfig Watermark { get; set; } = new();
     public bool AutoStartWithWindows { get; set; } = true;
+
+    /// <summary>Timed pause: capture is suspended until this instant, then auto-resumes. Null/past = not timed-paused.</summary>
     public DateTime? PausedUntil { get; set; }
+
+    /// <summary>
+    /// Open-ended "vacation" pause: capture stays suspended until the user manually resumes,
+    /// regardless of <see cref="PausedUntil"/>. Persisted like any config, so it survives restarts —
+    /// a classroom PC that reboots over a holiday stays paused. Takes priority over
+    /// <see cref="PausedUntil"/> in <see cref="Core.ScheduleDecision.Evaluate"/>.
+    /// </summary>
+    public bool PausedIndefinitely { get; set; }
 }

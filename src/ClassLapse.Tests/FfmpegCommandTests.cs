@@ -71,7 +71,7 @@ public class FfmpegCommandTests
     public void BuildArgs_primary_puts_input_rate_before_input()
     {
         var cfg = new TimelapseConfig { Fps = 24, ResolutionHeight = 1080, Crf = 20, UseDurationListFallback = false };
-        var args = FfmpegCommand.BuildArgs("list.txt", "out.mp4", cfg, hasLibx264: true).ToList();
+        var args = FfmpegCommand.BuildArgs("list.txt", "out.mp4", cfg, hasLibx264: true, hasDeflicker: false).ToList();
 
         int rIdx = args.IndexOf("-r");
         int iIdx = args.IndexOf("-i");
@@ -88,7 +88,7 @@ public class FfmpegCommandTests
     public void BuildArgs_fallback_puts_rate_after_input_only()
     {
         var cfg = new TimelapseConfig { Fps = 30, UseDurationListFallback = true };
-        var args = FfmpegCommand.BuildArgs("list.txt", "out.mp4", cfg, hasLibx264: true).ToList();
+        var args = FfmpegCommand.BuildArgs("list.txt", "out.mp4", cfg, hasLibx264: true, hasDeflicker: false).ToList();
 
         int rIdx = args.IndexOf("-r");
         int iIdx = args.IndexOf("-i");
@@ -99,7 +99,7 @@ public class FfmpegCommandTests
     [Fact]
     public void BuildArgs_uses_mpeg4_when_libx264_absent()
     {
-        var args = FfmpegCommand.BuildArgs("l", "o", new TimelapseConfig(), hasLibx264: false).ToList();
+        var args = FfmpegCommand.BuildArgs("l", "o", new TimelapseConfig(), hasLibx264: false, hasDeflicker: false).ToList();
 
         Assert.Contains("mpeg4", args);
         Assert.DoesNotContain("libx264", args);
@@ -112,5 +112,43 @@ public class FfmpegCommandTests
     {
         Assert.Equal("scale=-2:720,format=yuv420p", FfmpegCommand.BuildScaleFilter(720));
         Assert.Equal("scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p", FfmpegCommand.BuildScaleFilter(0));
+    }
+
+    // ----- BuildVideoFilter (brightness unification / deflicker) -----
+
+    [Fact]
+    public void BuildVideoFilter_appends_deflicker_when_enabled_and_supported()
+    {
+        var cfg = new TimelapseConfig { ResolutionHeight = 1080, NormalizeBrightness = true };
+        Assert.Equal("scale=-2:1080,format=yuv420p,deflicker=size=5:mode=am",
+            FfmpegCommand.BuildVideoFilter(cfg, hasDeflicker: true));
+    }
+
+    [Fact]
+    public void BuildVideoFilter_omits_deflicker_when_disabled()
+    {
+        var cfg = new TimelapseConfig { ResolutionHeight = 1080, NormalizeBrightness = false };
+        Assert.Equal("scale=-2:1080,format=yuv420p",
+            FfmpegCommand.BuildVideoFilter(cfg, hasDeflicker: true));
+    }
+
+    [Fact]
+    public void BuildVideoFilter_omits_deflicker_when_build_lacks_the_filter()
+    {
+        // Enabled in config, but the ffmpeg build has no deflicker filter -> skipped, not emitted.
+        var cfg = new TimelapseConfig { ResolutionHeight = 720, NormalizeBrightness = true };
+        Assert.Equal("scale=-2:720,format=yuv420p",
+            FfmpegCommand.BuildVideoFilter(cfg, hasDeflicker: false));
+    }
+
+    [Fact]
+    public void BuildArgs_puts_deflicker_after_scale_in_vf()
+    {
+        var cfg = new TimelapseConfig { ResolutionHeight = 1080, NormalizeBrightness = true };
+        var args = FfmpegCommand.BuildArgs("l", "o", cfg, hasLibx264: true, hasDeflicker: true).ToList();
+
+        int vf = args.IndexOf("-vf");
+        Assert.True(vf >= 0 && vf + 1 < args.Count, "-vf must be present with a value");
+        Assert.Equal("scale=-2:1080,format=yuv420p,deflicker=size=5:mode=am", args[vf + 1]);
     }
 }

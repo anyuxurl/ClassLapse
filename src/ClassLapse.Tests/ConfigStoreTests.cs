@@ -108,6 +108,7 @@ public class ConfigStoreTests : IDisposable
             },
             AutoStartWithWindows = false,
             PausedUntil = new DateTime(2026, 5, 17, 14, 0, 0),
+            PausedIndefinitely = true,
         };
 
         store.Save(written);
@@ -136,6 +137,7 @@ public class ConfigStoreTests : IDisposable
         Assert.Equal(20, read.Storage.MaxDiskUsageGB);
         Assert.False(read.AutoStartWithWindows);
         Assert.Equal(new DateTime(2026, 5, 17, 14, 0, 0), read.PausedUntil);
+        Assert.True(read.PausedIndefinitely);
     }
 
     [Fact]

@@ -69,7 +69,7 @@ public sealed class CaptureScheduler : IDisposable
         var now = _clock();
 
         PruneStaleEntries(config.Schedule);
-        var eval = ScheduleDecision.Evaluate(now, config.Schedule, config.PausedUntil, _lastByEntryId);
+        var eval = ScheduleDecision.Evaluate(now, config.Schedule, config.PausedUntil, config.PausedIndefinitely, _lastByEntryId);
 
         OnTickEvaluated?.Invoke(eval.Reason, config);
 

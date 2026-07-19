@@ -54,6 +54,20 @@ public static class CaptureLibrary
     public static IReadOnlyList<string> CollectFrames(IEnumerable<CaptureDay> days)
     {
         var frames = new List<string>();
+        foreach (var perDay in CollectFramesByDay(days))
+        {
+            frames.AddRange(perDay);
+        }
+        return frames;
+    }
+
+    /// <summary>
+    /// Same frames as <see cref="CollectFrames"/> but grouped per day (days ascending, each day's
+    /// frames chronological). Lets callers resample each day independently before flattening.
+    /// </summary>
+    public static IReadOnlyList<IReadOnlyList<string>> CollectFramesByDay(IEnumerable<CaptureDay> days)
+    {
+        var byDay = new List<IReadOnlyList<string>>();
         foreach (var day in days.OrderBy(d => d.Date))
         {
             var inDay = new List<string>();
@@ -62,9 +76,9 @@ public static class CaptureLibrary
                 if (SafeLength(f) > 0) inDay.Add(f);
             }
             inDay.Sort(StringComparer.Ordinal);
-            frames.AddRange(inDay);
+            byDay.Add(inDay);
         }
-        return frames;
+        return byDay;
     }
 
     private static List<string> SafeEnumerateDirectories(string dir)

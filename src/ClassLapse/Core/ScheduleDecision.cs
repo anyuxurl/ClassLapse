@@ -34,15 +34,17 @@ public static class ScheduleDecision
     /// <remarks>
     /// Aggregate priority (most "active" wins, so the tray never says "waiting" while an entry
     /// is capturing): Paused &gt; ShouldCapture &gt; TooSoon &gt; OutsideTimeWindows &gt; OutsideActiveDay.
-    /// Pause is global and beats everything.
+    /// A pause — open-ended (<paramref name="pausedIndefinitely"/>) or timed (<paramref name="pausedUntil"/>) —
+    /// is global and beats everything.
     /// </remarks>
     public static ScheduleEvaluation Evaluate(
         DateTime now,
         ScheduleConfig schedule,
         DateTime? pausedUntil,
+        bool pausedIndefinitely,
         IReadOnlyDictionary<string, DateTime> lastByEntryId)
     {
-        if (pausedUntil is { } until && until > now)
+        if (pausedIndefinitely || (pausedUntil is { } until && until > now))
         {
             return new ScheduleEvaluation(Reason.Paused, Array.Empty<string>());
         }

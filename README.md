@@ -31,6 +31,7 @@
 ─────────────────────────
 ⏸  暂停 1 小时
 ⏸  暂停今天剩余
+⏸  持续暂停（手动恢复）
 ▶  恢复
 ─────────────────────────
 📷  立即拍一张（测试）
@@ -86,7 +87,7 @@ ClassLapse/
 │   │   │   ├── CaptureFileStore.cs   # 唯一文件名 + 临时文件落盘 + 原子重命名，绝不覆盖已有照片
 │   │   │   ├── CaptureJournal.cs     # AppData JSONL 拍摄流水，记录成功、相机失败和写盘失败
 │   │   │   ├── ProcessWatchdog.cs    # 伴随守护进程，异常退出自动重启，正常退出不拉起
-│   │   │   ├── ScheduleDecision.cs   # 纯函数：(now, schedule, paused, lastByEntry) -> 哪些条目该拍
+│   │   │   ├── ScheduleDecision.cs   # 纯函数：(now, schedule, paused, pausedIndefinitely, lastByEntry) -> 哪些条目该拍
 │   │   │   ├── LegacyScheduleMigration.cs # 旧全局计划 → 条目列表（确定性 id，幂等）
 │   │   │   ├── CaptureLibrary.cs      # 枚举 yyyy-MM-dd 日期 + 按时序收集帧（合成用）
 │   │   │   ├── FfmpegLocator.cs       # 探测 ffmpeg：配置路径 / exe 同目录 / PATH

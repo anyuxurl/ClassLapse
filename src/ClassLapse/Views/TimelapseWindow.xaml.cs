@@ -25,6 +25,17 @@ public partial class TimelapseWindow : Window
         new("原始（仅同分辨率安全）", 0),
     };
 
+    // Timestamp-resample presets. Minutes = real minutes per kept frame; 0 = keep every frame.
+    private sealed record PaceOption(string Label, double Minutes);
+
+    private static readonly PaceOption[] Paces =
+    {
+        new("完整（每张都用）", 0),
+        new("流畅（2 分钟/帧）", 2),
+        new("标准·真实等速（5 分钟/帧）", 5),
+        new("精简（10 分钟/帧）", 10),
+    };
+
     private sealed class DayRow
     {
         public CheckBox Check = null!;
@@ -36,8 +47,15 @@ public partial class TimelapseWindow : Window
     private TimelapseConfig _tl;
 
     private readonly List<DayRow> _dayRows = new();
+
+    // Per-day frame paths, loaded once in the background so the estimate can reflect the
+    // resampled frame count without hitting the disk on every option change.
+    private readonly Dictionary<DateOnly, IReadOnlyList<string>> _framesByDate = new();
+    private bool _framesLoaded;
+
     private string? _ffmpegPath;
     private bool _hasLibx264;
+    private bool _hasDeflicker;
     private bool _composing;
     private bool _loaded;
 
@@ -60,11 +78,15 @@ public partial class TimelapseWindow : Window
     {
         foreach (var r in Resolutions) ResolutionCombo.Items.Add(r.Label);
         ResolutionCombo.SelectedIndex = IndexForHeight(_tl.ResolutionHeight);
+        foreach (var p in Paces) PaceCombo.Items.Add(p.Label);
+        PaceCombo.SelectedIndex = IndexForPace(_tl.ResampleMinutes);
+        BrightnessCheck.IsChecked = _tl.NormalizeBrightness;
         FpsBox.Text = _tl.Fps.ToString();
 
         PopulateDays();
         _loaded = true;
         UpdateEstimate();
+        _ = LoadFramesForEstimateAsync();
 
         await DetectFfmpegAsync();
     }
@@ -116,6 +138,37 @@ public partial class TimelapseWindow : Window
         return list;
     }
 
+    // Preload each day's frame paths off the UI thread so UpdateEstimate can show the resampled
+    // frame count. Names only (no image decoding), so it's cheap even for the dense days.
+    private async Task LoadFramesForEstimateAsync()
+    {
+        try
+        {
+            var days = _dayRows.Select(r => r.Day).Where(d => d.JpgCount > 0).ToList();
+            if (days.Count == 0) { _framesLoaded = true; return; }
+
+            var map = await Task.Run(() =>
+            {
+                var ordered = days.OrderBy(d => d.Date).ToList();
+                var byDay = CaptureLibrary.CollectFramesByDay(ordered); // same ascending order
+                var m = new Dictionary<DateOnly, IReadOnlyList<string>>();
+                for (int i = 0; i < ordered.Count && i < byDay.Count; i++)
+                {
+                    m[ordered[i].Date] = byDay[i];
+                }
+                return m;
+            });
+
+            foreach (var kv in map) _framesByDate[kv.Key] = kv.Value;
+            _framesLoaded = true;
+            UpdateEstimate();
+        }
+        catch (Exception ex)
+        {
+            Log.Warn("timelapse: frame preload for estimate failed: " + ex.Message);
+        }
+    }
+
     private void OnSelectAllClick(object sender, RoutedEventArgs e)
     {
         foreach (var row in _dayRows) if (row.Check.IsEnabled) row.Check.IsChecked = true;
@@ -136,6 +189,8 @@ public partial class TimelapseWindow : Window
         if (_ffmpegPath == null)
         {
             _hasLibx264 = false;
+            _hasDeflicker = false;
+            BrightnessCheck.IsEnabled = false;
             FfmpegStatus.Text = "未找到 ffmpeg。把 ffmpeg.exe 放到本程序同目录或系统 PATH，或点右侧手动选择。";
             UpdateComposeEnabled();
             return;
@@ -143,14 +198,27 @@ public partial class TimelapseWindow : Window
 
         FfmpegStatus.Text = $"正在检测编码器…（{_ffmpegPath}）";
         UpdateComposeEnabled();
+        var composer = new TimelapseComposer(_ffmpegPath);
         try
         {
-            _hasLibx264 = await new TimelapseComposer(_ffmpegPath).HasEncoderAsync(FfmpegCommand.Libx264);
+            _hasLibx264 = await composer.HasEncoderAsync(FfmpegCommand.Libx264);
         }
         catch
         {
             _hasLibx264 = false;
         }
+        try
+        {
+            _hasDeflicker = await composer.HasFilterAsync("deflicker");
+        }
+        catch
+        {
+            _hasDeflicker = false;
+        }
+        BrightnessCheck.IsEnabled = _hasDeflicker && !_composing;
+        BrightnessCheck.ToolTip = _hasDeflicker
+            ? "消除画面忽明忽暗（webcam 自动曝光、开关灯、投影仪、天光变化）。时间窗平滑，保留白天→傍晚的缓慢明暗变化。"
+            : "当前 ffmpeg 构建不含 deflicker 滤镜，无法做亮度统一。";
         FfmpegStatus.Text = _hasLibx264
             ? $"ffmpeg 就绪：{_ffmpegPath}"
             : $"ffmpeg 就绪（无 libx264，将用 mpeg4 兜底，体积偏大）：{_ffmpegPath}";
@@ -189,7 +257,9 @@ public partial class TimelapseWindow : Window
 
         var selected = SelectedDays();
         int fps = ParsedFps();
-        int frames = selected.Sum(d => d.JpgCount);
+        double pace = SelectedPaceMinutes();
+        int rawFrames = selected.Sum(d => d.JpgCount);
+        int frames = EstimatedFrameCount(selected, pace);
 
         if (!_userEditedOutput)
         {
@@ -205,7 +275,7 @@ public partial class TimelapseWindow : Window
         {
             EstimateText.Text = "（请勾选至少一个日期）";
         }
-        else if (frames == 0)
+        else if (rawFrames == 0)
         {
             EstimateText.Text = "（所选日期没有可用照片）";
         }
@@ -215,7 +285,10 @@ public partial class TimelapseWindow : Window
             string durText = dur.TotalHours >= 1
                 ? $"{(int)dur.TotalHours}:{dur.Minutes:00}:{dur.Seconds:00}"
                 : $"{dur.Minutes}:{dur.Seconds:00}";
-            EstimateText.Text = $"已选 {selected.Count} 天 · {frames:N0} 帧 → 约 {durText} @ {fps} fps";
+            string frameText = (pace > 0 && _framesLoaded && frames != rawFrames)
+                ? $"{rawFrames:N0}→{frames:N0} 帧（重采样）"
+                : $"{frames:N0} 帧";
+            EstimateText.Text = $"已选 {selected.Count} 天 · {frameText} → 约 {durText} @ {fps} fps";
         }
 
         UpdateComposeEnabled();
@@ -227,6 +300,31 @@ public partial class TimelapseWindow : Window
     {
         int i = ResolutionCombo.SelectedIndex;
         return (i >= 0 && i < Resolutions.Length) ? Resolutions[i].Height : 1080;
+    }
+
+    private double SelectedPaceMinutes()
+    {
+        int i = PaceCombo.SelectedIndex;
+        return (i >= 0 && i < Paces.Length) ? Paces[i].Minutes : _tl.ResampleMinutes;
+    }
+
+    // Frames that will actually be encoded for the estimate: resampled per-day count when a pace is
+    // set and the preload is done, else the raw photo count.
+    private int EstimatedFrameCount(List<CaptureLibrary.CaptureDay> selected, double paceMinutes)
+    {
+        if (paceMinutes <= 0 || !_framesLoaded)
+        {
+            return selected.Sum(d => d.JpgCount);
+        }
+        var cadence = TimeSpan.FromMinutes(paceMinutes);
+        int sum = 0;
+        foreach (var d in selected)
+        {
+            sum += _framesByDate.TryGetValue(d.Date, out var frames)
+                ? FrameResampler.ResampleDay(frames, cadence).Count
+                : d.JpgCount;
+        }
+        return sum;
     }
 
     private string ComputeDefaultOutput(List<CaptureLibrary.CaptureDay> selected)
@@ -276,6 +374,8 @@ public partial class TimelapseWindow : Window
         // persist chosen options as next-time defaults (also feeds the run)
         _tl.Fps = fps;
         _tl.ResolutionHeight = SelectedHeight();
+        _tl.ResampleMinutes = SelectedPaceMinutes();
+        _tl.NormalizeBrightness = BrightnessCheck.IsChecked == true;
         SaveConfig();
 
         SetComposing(true);
@@ -286,12 +386,18 @@ public partial class TimelapseWindow : Window
 
         var composer = new TimelapseComposer(_ffmpegPath);
         bool hasLibx264 = _hasLibx264;
+        bool hasDeflicker = _hasDeflicker;
         var cfg = _tl;
         _cts = new CancellationTokenSource();
 
         try
         {
-            var frames = await Task.Run(() => CaptureLibrary.CollectFrames(selectedDays), _cts.Token);
+            double pace = _tl.ResampleMinutes;
+            var frames = await Task.Run<IReadOnlyList<string>>(() =>
+                pace > 0
+                    ? FrameResampler.Resample(CaptureLibrary.CollectFramesByDay(selectedDays), TimeSpan.FromMinutes(pace))
+                    : CaptureLibrary.CollectFrames(selectedDays),
+                _cts.Token);
             if (frames.Count == 0) { SetStatus("所选日期没有可用照片"); return; }
 
             int total = frames.Count;
@@ -301,7 +407,7 @@ public partial class TimelapseWindow : Window
                 SetStatus($"合成中… {(int)(p * total)} / {total} 帧");
             });
 
-            var result = await composer.ComposeAsync(frames, outPath, cfg, hasLibx264, progress, _cts.Token);
+            var result = await composer.ComposeAsync(frames, outPath, cfg, hasLibx264, hasDeflicker, progress, _cts.Token);
             if (result.Success)
             {
                 _lastResultPath = result.OutputPath;
@@ -366,6 +472,8 @@ public partial class TimelapseWindow : Window
         PickFfmpegButton.IsEnabled = !on;
         FpsBox.IsEnabled = !on;
         ResolutionCombo.IsEnabled = !on;
+        PaceCombo.IsEnabled = !on;
+        BrightnessCheck.IsEnabled = !on && _hasDeflicker;
         OutputBox.IsEnabled = !on;
         foreach (var row in _dayRows) row.Check.IsEnabled = !on && row.Day.JpgCount > 0;
         UpdateComposeEnabled();
@@ -383,6 +491,15 @@ public partial class TimelapseWindow : Window
             if (Resolutions[i].Height == height) return i;
         }
         return 0; // default 1080p
+    }
+
+    private static int IndexForPace(double minutes)
+    {
+        for (int i = 0; i < Paces.Length; i++)
+        {
+            if (Paces[i].Minutes == minutes) return i;
+        }
+        return Array.FindIndex(Paces, p => p.Minutes == 5) is var std && std >= 0 ? std : 0; // fall back to 标准
     }
 
     private static string? SafeDir(string path)

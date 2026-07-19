@@ -43,6 +43,28 @@ public sealed class TimelapseComposer
         }
     }
 
+    /// <summary>True if the ffmpeg build includes the given video filter (parses <c>-filters</c> output).</summary>
+    public async Task<bool> HasFilterAsync(string filter, CancellationToken ct = default)
+    {
+        try
+        {
+            var (exit, stdout, _) = await RunCaptureAsync(new[] { "-hide_banner", "-filters" }, ct).ConfigureAwait(false);
+            if (exit != 0) return false;
+
+            foreach (var line in stdout.Split('\n'))
+            {
+                // Filter rows look like " ... deflicker        V->V       Remove ...": flags, name, io, desc.
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2 && parts[1] == filter) return true;
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     /// <summary>
     /// Compose <paramref name="orderedFrames"/> into <paramref name="outPath"/>. Progress reports
     /// 0..1 by frame. Cancellation kills ffmpeg and removes the partial output. The temp list file
@@ -53,6 +75,7 @@ public sealed class TimelapseComposer
         string outPath,
         TimelapseConfig cfg,
         bool hasLibx264,
+        bool hasDeflicker,
         IProgress<double>? progress = null,
         CancellationToken ct = default)
     {
@@ -79,7 +102,7 @@ public sealed class TimelapseComposer
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
             };
-            foreach (var a in FfmpegCommand.BuildArgs(listPath, outPath, cfg, hasLibx264))
+            foreach (var a in FfmpegCommand.BuildArgs(listPath, outPath, cfg, hasLibx264, hasDeflicker))
             {
                 psi.ArgumentList.Add(a);
             }
